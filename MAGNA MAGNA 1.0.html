@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>MAGNA MAGNA</title>
+<title>MAGNA MAGNA v1.0</title>
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
 <style>
 :root{--bg:#1b1b2f;--pn:#2b2b45;--tx:#f4efe2;--ac:#f2b134;--ok:#5ec27a;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
@@ -104,11 +104,12 @@ input[type=range]{padding:0;background:none}
    <canvas id="tfat" width="192" height="108"></canvas>
    <div id="tmenu">
     <div id="tlogos" style="display:none"></div>
-    <h1>MAGNA MAGNA</h1>
+    <h1>MAGNA MAGNA</h1><div style="font-size:12px;opacity:.85">v1.0</div>
     <div>Costruisci la tua carriera politica</div><div style="font-size:12px;opacity:.85">Clicca ovunque per attivare la musica</div>
     <button id="bNew" class="b1">Nuova partita</button>
     <button id="bCont" class="b2">Continua</button>
     <button id="bSand" disabled title="Prevista nella Fase E">Sandbox (presto)</button>
+    <button id="bLang" class="b2">English</button>
     <button id="bCred" class="b4">Crediti</button>
     <button id="bQuit" class="b3">Esci</button>
    </div>
@@ -137,6 +138,16 @@ input[type=range]{padding:0;background:none}
 </div>
 <script>
 "use strict";
+
+/* ===== LINGUA (v1.0): sorgente in italiano, traduzione a runtime ===== */
+let LANG="it";try{LANG=localStorage.getItem("magnamagna.lang")==="en"?"en":"it"}catch(e){}
+const EN_EX=new Map([["Nuova partita", "New game"], ["Continua", "Continue"], ["Sandbox (presto)", "Sandbox (soon)"], ["Crediti", "Credits"], ["Esci", "Quit"], ["Pausa", "Pause"], ["Riprendi", "Resume"], ["Salva ora", "Save now"], ["Menu principale", "Main menu"], ["Chiudi", "Close"], ["Indietro", "Back"], ["Avanti", "Next"], ["Salta", "Skip"], ["Partito", "Party"], ["Notizie", "News"], ["Passa il tempo", "Pass time"], ["Tutorial", "Tutorial"], ["Salva", "Save"], ["Programma", "Platform"], ["Propaganda", "Propaganda"], ["Mappa", "Map"], ["Sondaggi", "Polls"], ["Elezioni", "Elections"], ["Parlamento", "Parliament"], ["Governo", "Government"], ["Economia", "Economy"], ["FONDI", "FUNDS"], ["CONSENSO", "SUPPORT"], ["NOTORIETÀ", "FAME"], ["ISCRITTI", "MEMBERS"], ["GIORNO", "DAY"], ["NOTIZIE", "NEWS"], ["ELEZIONI", "ELECTION"], ["USCITA", "EXIT"], ["TRIBUNA", "PODIUM"], ["PRESIDENTE", "SPEAKER"], ["SEDE", "HQ"], ["REDAZIONE", "NEWSROOM"], ["PIAZZA", "SQUARE"], ["PARLAMENTO", "PARLIAMENT"], ["BAR", "BAR"], ["IN ONDA", "ON AIR"], ["Inizia!", "Start!"], ["Avanti: ideologia", "Next: ideology"], ["Fonda il partito", "Found the party"], ["Scegli il logo:", "Choose the logo:"], ["Crea il tuo partito", "Create your party"], ["Ideologia e programma", "Ideology and platform"], ["Nome Leader", "Leader name"], ["Nome Partito", "Party name"], ["Slogan", "Slogan"], ["Salta tutorial", "Skip tutorial"], ["Simbolo", "Symbol"]]);
+const EN_SUB=[["Parti da un modello e regola ogni tema. Le ideologie sono parametri di simulazione, non giudizi morali.", "Start from a model and adjust each issue. Ideologies are simulation parameters, not moral judgments."], ["A/D o frecce: muovi · W/Spazio: salta · Shift: corri · E: interagisci · Esc: pausa", "A/D or arrows: move · W/Space: jump · Shift: run · E: interact · Esc: pause"], ["Al bar si parla di politica. Offri un caffè a tutti?", "People talk politics at the bar. Buy everyone a coffee?"], ["Sovrascrivere il salvataggio? Clicca ancora", "Overwrite the save? Click again"], ["Piazza centrale: puoi tenere un comizio.", "Central square: you can hold a rally."], ["TOC! Il presidente proclama i risultati", "TOC! The speaker announces the results"], ["Clicca ovunque per attivare la musica", "Click anywhere to turn on music"], ["Costruisci la tua carriera politica", "Build your political career"], ["Nasce un nuovo movimento politico.", "A new political movement is born."], ["Il presidente: scrutinio in corso ", "The speaker: counting in progress "], ["Oppure scegli dalla tavolozza:", "Or pick from the palette:"], ["Redazione del giornale locale.", "Local newspaper newsroom."], ["Prevista nelle prossime fasi", "Coming in later phases"], ["Sede del partito. Cosa fai?", "Party headquarters. What will you do?"], ["Nessun salvataggio valido", "No valid save"], ["Salvataggio non riuscito", "Save failed"], ["Parla male di un partito", "Attack a party"], ["Organizza una riunione", "Hold a meeting"], ["Rilascia un’intervista", "Give an interview"], ["ASSEGNAZIONE DEI SEGGI", "SEAT ALLOCATION"], ["Prevista nella Fase E", "Coming in a later phase"], ["Fuori dal Parlamento", "Outside Parliament"], ["Risultati elettorali", "Election results"], ["Fondi insufficienti", "Not enough funds"], ["Riunione di partito", "Party meeting"], ["Parla con i clienti", "Talk to customers"], ["Musica disattivata", "Music off"], ["Intervieni in aula", "Speak in the chamber"], ["Azione completata", "Action completed"], ["Stampa volantini", "Print flyers"], ["Tieni un comizio", "Hold a rally"], ["SPOGLIO DEI VOTI", "VOTE COUNT"], ["Musica attivata", "Music on"], ["Partita salvata", "Game saved"], ["In Parlamento: ", "In Parliament: "], ["Chiedi sostegno", "Ask for support"], ["Consenso ora: ", "Current support: "], ["Il tuo partito", "Your party"], ["Esci in strada", "Go out to the street"], ["Colore basso", "Bottom color"], ["Paga il giro", "Buy a round"], ["Colore alto", "Top color"], ["Musica: off", "Music: off"], ["Ideologia: ", "Ideology: "], ["Votazione: ", "Vote: "], ["Musica: on", "Music: on"], ["% consenso", "% support"], ["Consenso: ", "Support: "], ["Iscritti: ", "Members: "], ["Cittadino", "Citizen"], ["simbolo ", "symbol "], ["Errore: ", "Error: "], ["Giorno ", "Day "], ["Stato: ", "Status: "], ["Contro ", "Against "], ["basso ", "bottom "], ["Nasce ", "Founded: "], [" seggi", " seats"], ["alto ", "top "]];
+function L(s){if(LANG!=="en"||typeof s!=="string")return s;const k=s.trim();if(k&&EN_EX.has(k))return s.replace(k,EN_EX.get(k));let r=s;for(const[a,b]of EN_SUB)if(r.indexOf(a)>=0)r=r.split(a).join(b);return r}
+function trNode(n){if(n.__it===undefined)n.__it=n.nodeValue;n.nodeValue=LANG==="en"?L(n.__it):n.__it}
+function trDom(root){const w=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);let n;while((n=w.nextNode())){const p=n.parentNode;if(!p||p.tagName==="SCRIPT"||p.tagName==="STYLE"||!n.nodeValue.trim())continue;trNode(n)}
+ if(root.querySelectorAll)root.querySelectorAll("[title]").forEach(e=>{if(e.__it===undefined)e.__it=e.getAttribute("title");e.setAttribute("title",LANG==="en"?L(e.__it):e.__it)})}
+function applyLang(){document.documentElement.lang=LANG;trDom(document.body);const b=document.getElementById("bLang");if(b)b.textContent=LANG==="en"?"Italiano":"English"}
 /* ===== 1. COSTANTI E STATO CENTRALE ===== */
 const W=320,H=210,GY=180,SAVE_KEY="repubblicaPixel.v1";let WW=1500;
 const cv=document.getElementById("cv"),ctx=cv.getContext("2d");
@@ -239,7 +250,7 @@ function render(){if(G&&G.loc==='parl'&&!TITLE){renderParl();return}
 }
 /* ===== 6. INTERFACCIA ===== */
 function hud(){const e=G;$("hud").innerHTML=`<canvas id="hl" width="32" height="32" style="width:22px;height:22px"></canvas><span><b>${e.leader.name}</b> · ${e.party.name}</span><span>Fondi <b>€${Math.round(e.fondi)}</b></span><span>Consenso <b>${e.consenso.toFixed(1)}%</b></span><span>Notorietà <b>${e.notorieta.toFixed(0)}</b></span><span>Iscritti <b>${e.iscritti}</b></span><span>Giorno <b>${e.giorno}</b></span><span>Stato: <b>Fuori dal Parlamento</b></span><span>Notizie <b>${e.news.length}</b></span>`;drawLogo($("hl"),e.party.logo|0,e.party.col,e.party.col2||"#2a5aa8")}
-function toast(t){const d=document.createElement("div");d.textContent=t;$("toast").appendChild(d);setTimeout(()=>d.remove(),3500)}
+function toast(t){const d=document.createElement("div");d.textContent=t;trDom(d);$("toast").appendChild(d);setTimeout(()=>d.remove(),3500)}
 function buildMenu(){const m=$("menu");m.innerHTML="";
  const add=(t,fn,why)=>{const b=document.createElement("button");b.textContent=t;if(fn)b.onclick=fn;else{b.disabled=true;b.title=why||"Prevista nelle prossime fasi"}m.appendChild(b)};
  add("Partito",()=>showInfo(`<h2>${G.party.name}</h2><p>Leader: ${G.leader.name}<br>Slogan: “${G.party.slogan}”<br>Iscritti: ${G.iscritti}<br>Ideologia: ${ideoName(G.party.ideo||Array(14).fill(0))}</p><p style="font-size:16px;text-align:left">${ideoText(G.party.ideo||Array(14).fill(0))}</p><p>L’editor dell’aspetto del leader arriva nella Fase B.</p>`));
@@ -249,7 +260,7 @@ function buildMenu(){const m=$("menu");m.innerHTML="";
  ["Programma","Propaganda","Mappa","Sondaggi","Elezioni","Parlamento","Governo","Economia"].forEach(x=>add(x,null,"Prevista nelle prossime fasi"))}
 function advance(n){return}/* il tempo ora scorre a fasce: vedi useSlot */function advanceOld(n){G.giorno+=n;G.fondi+=G.iscritti*n*0.5;G.consenso=Math.max(0,G.consenso-0.02*n);G.news.push(`Giorno ${G.giorno}: le quote associative portano €${Math.round(G.iscritti*0.5*n)}.`);hud();save()}
 let prevM="play";function showInfo(h){prevM=mode==="info"?prevM:mode;$("infoTx").innerHTML=h;setMode("info")}
-function setMode(m){mode=m;$("title").classList.toggle("on",m==="title");$("party").classList.toggle("on",m==="party");$("ideo").classList.toggle("on",m==="ideo");$("ele").classList.toggle("on",m==="ele");$("tut").classList.toggle("on",m==="tut");$("pause").classList.toggle("on",m==="pause");$("info").classList.toggle("on",m==="info");$("dlg").classList.toggle("on",m==="dialog");if(m!=="play")keys={};mkLogo()}
+function setMode(m){mode=m;$("title").classList.toggle("on",m==="title");$("party").classList.toggle("on",m==="party");$("ideo").classList.toggle("on",m==="ideo");$("ele").classList.toggle("on",m==="ele");$("tut").classList.toggle("on",m==="tut");$("pause").classList.toggle("on",m==="pause");$("info").classList.toggle("on",m==="info");$("dlg").classList.toggle("on",m==="dialog");if(m!=="play")keys={};mkLogo();applyLang()}
 /* azioni: effetti deterministici con rendimenti decrescenti */
 function dim(id){const u=G.uses[id]||0;return 1/(1+u*.3)}
 const ACT={
@@ -367,7 +378,7 @@ function drawHUD(){const e=G,p=e.party;
   if(c[2]!==undefined)R(x,44,Math.round((cw-2)*Math.min(100,c[2])/100),2,"#5ec27a")})}
 /* OVERLAY NITIDO: testi e HUD disegnati alla risoluzione reale dello schermo */
 const hc=$("hc"),hx=hc.getContext("2d");let PR=null;const SIGNS=[];
-function hxt(s,x,y,col,size,bold,al,outline){const k=hc.width/W;hx.font=(bold?"bold ":"")+Math.round(size*k)+'px "Courier New",monospace';hx.textAlign=al||"left";hx.textBaseline="alphabetic";
+function hxt(s,x,y,col,size,bold,al,outline){s=L(s);const k=hc.width/W;hx.font=(bold?"bold ":"")+Math.round(size*k)+'px "Courier New",monospace';hx.textAlign=al||"left";hx.textBaseline="alphabetic";
  if(outline){hx.lineWidth=Math.max(2,k*1.2);hx.lineJoin="round";hx.strokeStyle="#000";hx.strokeText(s,x*k,y*k)}
  hx.fillStyle=col;hx.fillText(s,x*k,y*k)}
 function drawOverlay(hudOn){const k=hc.width/W;hx.clearRect(0,0,hc.width,hc.height);hx.imageSmoothingEnabled=false;
@@ -665,7 +676,7 @@ function renderTut(){const i=TUT.i,t=TUT.t;ctx.imageSmoothingEnabled=false;
  R(10,10,300,118,'#111');ctx.save();ctx.beginPath();ctx.rect(13,13,294,112);ctx.clip();TSC[i](t,G.leader);ctx.restore();
  R(10,134,300,66,'#111');R(13,137,294,60,'#fffbe8');
  wrapT(tutText(i),50).slice(0,5).forEach((l,k)=>WT.push([l,160,150+k*10,'#222',7.5,false,true]));WT.push([(i+1)+'/7',292,206,'#888',6,false]);
- $('bTutN').textContent=i>=6?'Inizia!':'Avanti';drawOverlay(false)}
+ $('bTutN').textContent=L(i>=6?'Inizia!':'Avanti');drawOverlay(false)}
 function tutEnd(){setMode('play')}
 function openTutorial(){TUT={i:0,t:0};setMode('tut')}
 $('bTutN').onclick=()=>{TUT.i++;TUT.t=0;if(TUT.i>6)tutEnd()};$('bTutS').onclick=tutEnd;
@@ -700,7 +711,7 @@ ACT.bar.o=[['Parla con i clienti (gratis)',startSpec(SP.barTalk)],['Paga il giro
 ACT.redaz.o=[['Rilascia un\u2019intervista (-150 \u20ac)',startSpec(SP.intervista)],['Parla male di un partito (-70 \u20ac)',()=>{if(G.fondi<70){toast('Servono 70 \u20ac: fondi insufficienti');return}REOPEN=true;openDlg('Di quale partito vuoi parlare male?',G.riv.map(r=>['Contro '+r.n,()=>{REOPEN=true;askQ(Object.assign({},SP.attacco,{name:'Attacco a '+r.n,target:r}),0,[])}]))}]];
 ACT.piazza.o=[['Tieni un comizio (-250 \u20ac)',startSpec(SP.comizio)]];
 ACT.tribuna.o=[['Intervieni in aula (-200 \u20ac)',startSpec(SP.tribuna)]];
-function hxr(s,x,y,col,size){const k=hc.width/W,parts=s.split('**'),cw=.6*size*k;let tot=0;parts.forEach(p=>{tot+=p.length});let px=x*k-tot*cw/2;
+function hxr(s,x,y,col,size){const k=hc.width/W,parts=L(s).split('**'),cw=.6*size*k;let tot=0;parts.forEach(p=>{tot+=p.length});let px=x*k-tot*cw/2;
  hx.textAlign='left';hx.textBaseline='alphabetic';hx.fillStyle=col;parts.forEach((p,i)=>{hx.font=(i%2?'bold ':'')+Math.round(size*k)+'px "Courier New",monospace';hx.fillText(p,px,y*k);px+=p.length*cw})}
 function partyInfo(){if(G.loc==='parl'||nearBan==null)return;const L=liveShares(),p=L[nearBan];let h;
  if(p.me){h='<h2>'+esc(p.n)+'</h2><p>Il tuo partito<br>Leader: '+esc(G.leader.name)+'<br>Slogan: \u201c'+esc(G.party.slogan)+'\u201d<br>Ideologia: '+ideoName(G.party.ideo||[])+'<br>Consenso: '+p.p.toFixed(1)+'%'+(G.seggi?'<br>Seggi: '+G.seggi:'')+'</p><p style="font-size:16px;text-align:left">'+ideoText(G.party.ideo||Array(14).fill(0))+'</p>'}
@@ -774,6 +785,8 @@ $("bRes").onclick=()=>setMode("play");$("bSave").onclick=()=>save(true);
 $("bExit").onclick=()=>{save();setMode("title")};
 $("bInfo").onclick=()=>setMode(prevM==="title"||!G?"title":"play");
 $("bCont").disabled=!load();
+$("bLang").onclick=()=>{LANG=LANG==="en"?"it":"en";try{localStorage.setItem("magnamagna.lang",LANG)}catch(e){}if(G)buildMenu();applyLang()};
+applyLang();
 G=null;requestAnimationFrame(frame);
 </script>
 </body>
