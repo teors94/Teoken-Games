@@ -1,0 +1,1075 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Aeroport Game 1.0</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#20301a;font-family:'Courier New',Courier,monospace}
+canvas#c{position:fixed;inset:0;width:100%;height:100%}
+.box{background:#f1dfb0;color:#4a3115;border:3px solid #6b4a22;border-radius:10px;padding:6px 12px;box-shadow:0 3px 0 #6b4a22;font-weight:bold}
+#hud{position:fixed;top:0;left:0;right:0;padding:10px;display:flex;gap:10px;flex-wrap:wrap;pointer-events:none}
+#hud .box{pointer-events:auto}
+#panel{position:fixed;display:none;left:10px;right:auto;top:70px;width:250px;max-height:calc(100vh - 150px);font-size:12px;overflow:auto;background:#f1dfb0;color:#4a3115;border:3px solid #6b4a22;border-radius:10px;box-shadow:0 3px 0 #6b4a22;padding:8px;font-size:13px}
+#panel h3{margin:6px 0 8px;font-size:15px}
+.fl{border:2px solid #b08a4c;border-radius:8px;padding:6px;margin-bottom:6px;background:#fbf2d6;cursor:pointer}
+.fl.sel{border-color:#e0a800;background:#fff4b8}
+.fl small{display:block;color:#6b4a22;margin:2px 0}
+.up{border:2px solid #b08a4c;border-radius:8px;padding:6px;margin-bottom:6px;background:#fbf2d6}
+.up small{display:block;color:#6b4a22;margin:2px 0}
+.empty{color:#6b4a22;font-style:italic}
+button,select{font-family:inherit;font-size:13px;font-weight:bold;padding:5px 8px;border:2px solid #3f6b22;border-radius:6px;background:#7cc24a;color:#fff;cursor:pointer;margin-top:4px}
+button:disabled{background:#aaa;border-color:#777;cursor:default}
+select{background:#fff;color:#333;border-color:#6b4a22}
+.tab{background:#c9a86a;border-color:#6b4a22;color:#fff;margin:0 4px 8px 0}
+.tab.on{background:#7cc24a;border-color:#3f6b22}
+#zoomBox,#zIn,#zOut,#zReset{display:none!important}
+@keyframes blink{50%{background:#ffd23f}}
+.blink{animation:blink .8s infinite}
+#msg{position:fixed;bottom:64px;left:50%;transform:translateX(-50%);max-width:90vw;text-align:center}
+#help{position:fixed;bottom:14px;right:14px;color:#fff8e7;background:rgba(0,0,0,.45);padding:8px 10px;border-radius:8px;font-size:12px;max-width:260px;line-height:1.4}
+#over{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.55)}
+#over .card{background:#f1dfb0;color:#4a3115;border:4px solid #6b4a22;border-radius:14px;padding:28px;text-align:center;max-width:80vw}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud">
+  <div class="box" id="money"></div>
+  <div class="box" id="rep"></div>
+  <div class="box" id="served"></div>
+  <div class="box" id="rev"></div>
+  <div class="box" id="time"></div>
+  <div class="box" id="welcome" style="position:fixed;bottom:14px;left:200px;right:290px;font-size:11px;padding:4px 8px;z-index:4;pointer-events:none;text-align:center">🛬 Welcome to Foggia · starting routes: Milano Linate, Bergamo, Torino</div>
+    <button id="sndBtn" class="box" style="cursor:pointer;font-family:inherit">🔇 Audio off</button>
+</div>
+<div id="panel">
+  <h3 id="towerTitle" style="cursor:pointer">🗼 TORRE DI CONTROLLO · Foggia (FOG) ▾</h3>
+  <div id="towerBody">
+  <div class="tabs"><button class="tab on" data-tab="arr">🛬 Landing</button><button class="tab" data-tab="dep">🛫 Take Off</button></div>
+  <div id="arrPane"><div id="arrivals"></div></div>
+  <div id="depPane" style="display:none"><div id="departures"></div></div>
+
+  </div>
+</div>
+<button id="upgBtn" class="box" style="position:fixed;left:10px;bottom:14px;cursor:pointer;font-family:inherit;z-index:5">🏗️ Upgrades</button>
+<div id="upgPanel" class="box" style="display:none;position:fixed;left:10px;bottom:60px;width:300px;max-height:60vh;overflow:auto;z-index:5;font-size:13px"><button id="upgClose" style="float:right;margin:0 0 4px 8px;padding:0 7px">×</button><h3>🏗️ Upgrades</h3><div id="upg"></div></div>
+<div id="zoomBox" style="display:none;position:fixed;right:10px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:6px;z-index:5"><button id="zIn" style="width:44px;font-size:20px;margin:0">＋</button><button id="zOut" style="width:44px;font-size:20px;margin:0">－</button><button id="zReset" style="width:44px;margin:0">⟲</button></div>
+<button id="towerBtn" class="box" style="cursor:pointer;font-family:inherit;pointer-events:auto">🗼 Control Tower</button>
+<div id="planeCard" class="box" style="display:none;position:fixed;z-index:6;width:250px;font-size:13px;line-height:1.5;pointer-events:none"></div>
+<div id="msg" class="box" style="display:none"></div>
+<div id="hint" class="box" style="display:none;position:fixed;bottom:14px;left:50%;transform:translateX(-50%);max-width:90vw;text-align:center;font-size:14px">Benvenuto a Foggia! Per ora puoi volare a Milano Linate, Bergamo e Torino.</div>
+<div id="help">
+  <button id="helpClose" style="float:right;margin:0 0 4px 8px;padding:0 7px;font-size:14px">×</button>
+  <b>How to play</b><br>
+  • Autorizza atterraggi e decolli dal pannello.<br>
+  • Clicca l'aereo in coda: va da solo al gate libero più vicino.<br>
+  • La pista è a senso unico: si atterra da sinistra a destra, si decolla da destra a sinistra.<br>
+  • Con i ricavi compra potenziamenti: sbloccano rotte e compagnie.<br>
+  • WASD o frecce: muovi la mappa. Rotella o ＋ / －: zoom.
+</div>
+<div id="over"><div class="card"><h2>Aeroporto chiuso!</h2><p id="overText"></p><button id="restart">Ricomincia</button></div></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const cv = $('c'), ctx = cv.getContext('2d');
+const WW = 1600, WH = 900;
+let S = 1, OX = 0, OY = 0;
+const st = document.createElement('canvas'); st.width = WW * 2; st.height = WH * 2;
+const sc = st.getContext('2d');
+let Z = 1.25, PX0 = 0, PY0 = 0;
+const DPR = Math.min(window.devicePixelRatio || 1, 2);
+function fit() {
+  cv.width = innerWidth * DPR; cv.height = innerHeight * DPR;
+  const base = Math.min(innerWidth / WW, innerHeight / WH) * 0.98;
+  S = base * Z;
+  OX = (innerWidth - WW * S) / 2 + PX0; OY = (innerHeight - WH * S) / 2 + PY0;
+}
+fit();
+addEventListener('resize', fit);
+
+// zoom attorno a un punto dello schermo (il punto sotto il cursore resta fermo)
+function zoomAt(f, cx, cy) {
+  const wx = (cx - OX) / S, wy = (cy - OY) / S;
+  Z = Math.min(4, Math.max(0.6, Z * f));
+  const base = Math.min(innerWidth / WW, innerHeight / WH) * 0.98;
+  const newS = base * Z;
+  const baseOX = (innerWidth - WW * newS) / 2, baseOY = (innerHeight - WH * newS) / 2;
+  PX0 = cx - wx * newS - baseOX;
+  PY0 = cy - wy * newS - baseOY;
+  fit();
+}
+cv.addEventListener('wheel', e => {
+  e.preventDefault();
+  zoomAt(e.deltaY > 0 ? 1 / 1.1 : 1.1, e.clientX, e.clientY);
+}, { passive: false });
+
+const rnd = (a, b) => a + Math.random() * (b - a);
+const pick = a => a[Math.floor(Math.random() * a.length)];
+const P = (x, y) => ({ x, y });
+
+// ---------- Dati ----------
+const AIRLINES = {
+  ryan: { name: 'Ryanairo', code: 'FR', stripe: '#f5c800', fin: '#073590', wing: '#dfe6ee', pax: [130, 200], fare: 0.7, tiers: ['italia', 'europa'], req: null },
+  aero: { name: 'Aeropenisola', code: 'AP', stripe: '#2e8b57', fin: '#c8102e', wing: '#b9c2cc', pax: [90, 150], fare: 1.0, tiers: ['italia', 'europa'], req: null },
+  luft: { name: 'Lufthansina', code: 'LN', stripe: '#9ad0f5', fin: '#2b4a9a', wing: '#dfe6ee', pax: [110, 170], fare: 1.4, tiers: ['europa', 'mondo'], req: 'terminal' },
+  emir: { name: 'Emiratos', code: 'EM', stripe: '#d4af37', fin: '#b3001b', wing: '#dfe6ee', pax: [220, 300], fare: 1.6, tiers: ['mondo'], req: 'pista' }
+};
+// dimensioni e modelli per compagnia: low cost piccoli, linea grandi
+const AIRCRAFT = {
+  FR: { scale: 0.8, nose: '#f5c800', model: 'Boeing 737-800', cls: 'Low cost · piccolo' },
+  AP: { scale: 0.9, nose: '#c8102e', model: 'Embraer E195', cls: 'Medio raggio' },
+  LN: { scale: 1.15, nose: '#2b4a9a', model: 'Airbus A321', cls: 'Linea · grande' },
+  EM: { scale: 1.35, nose: '#b3001b', model: 'Boeing 777', cls: 'Wide-body · molto grande' }
+};
+// loghi stilizzati delle compagnie (forme e colori dei loghi)
+const LOGOS = {
+  FR: '<rect width="28" height="28" rx="6" fill="#073590"/><circle cx="14" cy="14" r="8" fill="#f5c800"/>',
+  AP: '<rect width="28" height="28" rx="6" fill="#ffffff" stroke="#c8102e" stroke-width="2"/><rect y="9" width="28" height="5" fill="#c8102e"/><rect y="16" width="28" height="5" fill="#2e8b57"/>',
+  LN: '<rect width="28" height="28" rx="6" fill="#2b4a9a"/><rect x="4" y="9" width="20" height="3" fill="#9ad0f5"/><rect x="4" y="16" width="20" height="3" fill="#9ad0f5"/>',
+  EM: '<rect width="28" height="28" rx="6" fill="#b3001b"/><circle cx="14" cy="14" r="7" fill="none" stroke="#d4af37" stroke-width="2.5"/>'
+};
+const logoHTML = al => `<svg width="22" height="22" viewBox="0 0 28 28" style="vertical-align:middle">${LOGOS[al.code]}</svg>`;
+const TIER_LABEL = { italia: 'Italia', europa: 'Europa', mondo: 'Internazionale' };
+const TIER_MULT = { italia: { pax: 1, fare: 1 }, europa: { pax: 1.1, fare: 1.8 }, mondo: { pax: 1.2, fare: 3.2 } };
+const ROUTES = [
+  { name: 'Milano Linate', tier: 'italia', req: null }, { name: 'Bergamo', tier: 'italia', req: null }, { name: 'Torino', tier: 'italia', req: null },
+  { name: 'Roma FCO', tier: 'italia', req: 'torre' }, { name: 'Napoli', tier: 'italia', req: 'torre' }, { name: 'Palermo', tier: 'italia', req: 'torre' }, { name: 'Catania', tier: 'italia', req: 'torre' },
+  { name: 'Parigi CDG', tier: 'europa', req: 'terminal' }, { name: 'Londra STN', tier: 'europa', req: 'terminal' }, { name: 'Madrid', tier: 'europa', req: 'terminal' }, { name: 'Berlino BER', tier: 'europa', req: 'terminal' },
+  { name: 'New York JFK', tier: 'mondo', req: 'pista' }, { name: 'Dubai DXB', tier: 'mondo', req: 'pista' }, { name: 'Tokyo HND', tier: 'mondo', req: 'pista' }
+];
+const UPGRADES = {
+  torre: { name: 'Torre di controllo potenziata', cost: 600, desc: 'Sblocca rotte: Roma, Napoli, Palermo, Catania' },
+  terminal: { name: 'Terminal internazionale', cost: 2000, desc: 'Sblocca rotte europee e la compagnia Lufthansina' },
+  pista: { name: 'Pista lunga', cost: 5000, desc: 'Sblocca rotte intercontinentali e la compagnia Emiratos' }
+};
+const owned = {};
+const reqOK = r => !r || !!owned[r];
+const WX = { sereno: '☀️ Sereno', nuvoloso: '☁️ Nuvoloso', pioggia: '🌧️ Pioggia', nebbia: '🌫️ Nebbia', vento: '💨 Vento forte' };
+
+// ---------- Layout (coordinate del mondo 1600x900) ----------
+const TAXI_Y = 340, RWY_Y = 130, EAST_X = 1450, GATE_Y = 500, HOLD_Y = 340;
+// vie di rullaggio curve: a destra della testata 33 (atterraggi) e a sinistra della 15 (decolli)
+const ARC_E = [P(1450,130), P(1450,160), P(1495,172), P(1528,205), P(1540,250), P(1528,295), P(1495,328), P(1450,340)];
+const ARC_W = [P(150,340), P(105,328), P(72,295), P(60,250), P(72,205), P(105,172), P(150,160), P(150,130)];
+const GATES = [180, 325, 470, 615, 760, 905, 1050, 1195].map((x, i) => ({ id: 8 - i, x, y: GATE_Y, plane: null }));
+const HOLD = [1260, 1340, 1420].map(x => ({ x, plane: null }));
+const AIRSLOT = [{ x: 40, y: 60, plane: null }, { x: 40, y: 110, plane: null }];
+
+// ---------- Sfondo disegnato una volta (stile template) ----------
+function buildStatic() {
+  const g = sc;
+  g.setTransform(2, 0, 0, 2, 0, 0);
+  g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+  g.fillStyle = '#6fb23f'; g.fillRect(0, 0, WW, WH);
+  for (let i = 0; i < 1100; i++) {
+    g.fillStyle = Math.random() < 0.5 ? '#7fc553' : '#5e9d36';
+    g.beginPath(); g.ellipse(Math.random() * WW, Math.random() * WH, 8 + Math.random() * 14, 5 + Math.random() * 8, 0, 0, 6.283); g.fill();
+  }
+  g.fillStyle = '#c99a4a'; g.fillRect(0, 0, 150, 70); g.fillRect(1180, 0, 220, 90);
+  g.fillStyle = '#d8b060'; for (let y = 8; y < 70; y += 12) g.fillRect(0, y, 150, 4);
+  // pista 15/33 (fascia centrale)
+  g.fillStyle = '#3d4450'; g.fillRect(80, 90, 1440, 80);
+  g.fillStyle = '#fff'; g.fillRect(80, 90, 1440, 2); g.fillRect(80, 168, 1440, 2);
+  for (let i = 0; i < 6; i++) { g.fillRect(165 + i * 10, 98, 5, 64); g.fillRect(1380 + i * 10, 98, 5, 64); }
+  g.font = 'bold 46px Arial'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText('15', 270, 130); g.fillText('33', 1330, 130);
+  g.fillStyle = '#fff'; for (let x = 300; x < 1300; x += 70) g.fillRect(x, 128, 36, 4);
+  // vie di rullaggio curve (asfalto con linea gialla al centro)
+  g.lineCap = 'butt';
+  g.strokeStyle = '#3d4450'; g.lineWidth = 22;
+  g.beginPath(); g.arc(1450, 250, 90, -Math.PI / 2, Math.PI / 2, false); g.stroke();
+  g.beginPath(); g.arc(150, 250, 90, Math.PI / 2, 3 * Math.PI / 2, false); g.stroke();
+  g.strokeStyle = '#f2c200'; g.lineWidth = 2;
+  g.beginPath(); g.arc(1450, 250, 90, -Math.PI / 2, Math.PI / 2, false); g.stroke();
+  g.beginPath(); g.arc(150, 250, 90, Math.PI / 2, 3 * Math.PI / 2, false); g.stroke();
+  // taxiway principale
+  g.fillStyle = '#3d4450'; g.fillRect(150, 329, 1300, 22);
+  g.fillStyle = '#f2c200'; g.fillRect(150, 339, 1300, 2);
+  // piazzale
+  g.fillStyle = '#b9b4a9'; g.fillRect(120, 352, 1360, 188);
+  g.fillStyle = '#f2c200'; g.fillRect(120, 462, 1360, 3);
+  GATES.forEach(gt => {
+    // via di rullaggio di accesso al gate
+    g.fillStyle = '#3d4450'; g.fillRect(gt.x - 12, 351, 24, 125);
+    g.fillStyle = '#f2c200'; g.fillRect(gt.x - 1.5, 351, 3, 125);
+    // piazzola tratteggiata e numero del gate
+    g.fillStyle = 'rgba(214,80,80,.45)'; g.fillRect(gt.x - 34, 476, 68, 50);
+    g.fillStyle = '#1d3557'; g.fillRect(gt.x - 24, 428, 48, 24);
+    g.fillStyle = '#fff'; g.font = 'bold 24px Arial'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('G' + gt.id, gt.x, 440);
+    // pontile d'imbarco
+    g.fillStyle = '#d6dbe2'; g.fillRect(gt.x - 9, 530, 18, 40);
+    g.fillStyle = '#5b6b7d'; g.fillRect(gt.x - 11, 530, 22, 4);
+  });
+  for (let i = 0; i < GATES.length - 1; i++) {
+    const x = (GATES[i].x + GATES[i + 1].x) / 2;
+    g.fillStyle = '#5a5f66'; g.fillRect(x - 2, 380, 4, 50);
+    g.fillStyle = '#ffe08a'; g.beginPath(); g.arc(x, 378, 6, 0, 6.283); g.fill();
+  }
+  // terminal
+  g.fillStyle = '#1d3557'; g.fillRect(470, 604, 660, 36);
+  g.fillStyle = '#fff'; g.font = 'bold 42px Arial'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText('Aeroporto di FOGGIA', 800, 622);
+  g.fillStyle = '#009246'; g.fillRect(610, 645, 50, 5);
+  g.fillStyle = '#fff'; g.fillRect(660, 645, 50, 5);
+  g.fillStyle = '#ce2b37'; g.fillRect(710, 645, 50, 5);
+  g.fillStyle = '#6b4a2a'; g.fillRect(170, 642, 1260, 14);
+  g.fillStyle = '#d9d2c2'; g.fillRect(170, 656, 1260, 110);
+  g.fillStyle = '#6fa8d6'; g.fillRect(170, 684, 1260, 24);
+  g.fillStyle = '#4a7fa8'; for (let x = 170; x < 1430; x += 70) g.fillRect(x, 684, 3, 24);
+  g.fillStyle = '#6fa8d6'; g.fillRect(740, 712, 120, 54);
+  // parcheggio
+  g.fillStyle = '#8f949b'; g.fillRect(200, 770, 1200, 100);
+  g.fillStyle = '#fff'; for (let x = 200; x <= 1400; x += 60) g.fillRect(x, 770, 2, 100);
+  const cols = ['#d9342b', '#2f6fd6', '#eeeeee', '#333333', '#f2a900'];
+  for (let x = 224; x < 1380; x += 120) { g.fillStyle = pick(cols); g.fillRect(x, 790, 40, 20); g.fillRect(x, 830, 40, 20); }
+  // torre di controllo (a destra, sotto la curva)
+  g.fillStyle = '#999'; g.fillRect(1484, 528, 60, 10);
+  g.fillStyle = '#e6e9ee'; g.fillRect(1496, 466, 36, 64);
+  g.fillStyle = '#d9342b'; g.fillRect(1496, 480, 36, 5); g.fillRect(1496, 500, 36, 5);
+  g.fillStyle = '#3a6fb0'; g.beginPath(); g.ellipse(1514, 458, 32, 16, 0, 0, 6.283); g.fill();
+  g.fillStyle = '#d9342b'; g.beginPath(); g.ellipse(1514, 440, 38, 8, 0, 0, 6.283); g.fill();
+  g.fillStyle = '#e6e9ee'; g.fillRect(1512, 410, 3, 30); g.fillRect(1522, 408, 3, 32);
+  g.fillStyle = '#ff3b30'; g.fillRect(1511, 406, 5, 5); g.fillRect(1521, 404, 5, 5);
+  // manica a vento
+  g.fillStyle = '#fff'; g.fillRect(1558, 28, 4, 56);
+  g.fillStyle = '#d9342b'; g.beginPath(); g.moveTo(1560, 30); g.lineTo(1600, 20); g.lineTo(1600, 40); g.lineTo(1560, 40); g.fill();
+  g.fillStyle = '#fff'; g.fillRect(1582, 20, 8, 20);
+  // alberi
+  [[40, 840], [110, 880], [1520, 860], [1575, 820], [1560, 640], [1576, 700], [30, 520], [60, 620], [1100, 40], [600, 30], [900, 20]].forEach(([x, y]) => {
+    g.fillStyle = '#8a5a2a'; g.fillRect(x - 2, y, 4, 8);
+    g.fillStyle = '#2f7a2a'; g.beginPath(); g.arc(x, y - 2, 12, 0, 6.283); g.fill();
+    g.fillStyle = '#3e9a38'; g.beginPath(); g.arc(x - 3, y - 6, 6, 0, 6.283); g.fill();
+  });
+}
+
+buildStatic();
+
+
+// ---------- Stato ----------
+let gatesOpen = 1;                      // all'inizio solo G1 è disponibile
+const gateOpen = g => g.id <= gatesOpen;
+const nextGateCost = () => Math.round(300 * Math.pow(1.5, gatesOpen - 1));
+function nextGateId() { return gatesOpen + 1; }
+function buyGate() {
+  if (gatesOpen >= GATES.length) return;
+  const cost = nextGateCost();
+  if (money < cost) { say(`Servono €${cost} per sbloccare il Gate G${nextGateId()}.`); return; }
+  money -= cost; gatesOpen++;
+  say(`Gate G${gatesOpen} sbloccato per €${cost}.`);
+  upgSig = ''; panelSig = '';
+}
+function gateRowHTML() {
+  if (gatesOpen >= GATES.length) return '';
+  const cost = nextGateCost();
+  return `<div class="up"><b>Gate G${nextGateId()}</b><small>Sblocca un nuovo gate (${gatesOpen}/${GATES.length} aperti)</small><button data-gate="1" ${money < cost ? 'disabled' : ''}>Sblocca €${cost}</button></div>`;
+}
+let planes = [], sel = null, nid = 1, elapsed = 0, running = true, spawnT = 3;
+let money = 500, rep = 3, served = 0, totalRev = 0;
+const WIND_RANGE = { sereno: [4, 8], nuvoloso: [8, 12], pioggia: [12, 18], nebbia: [2, 5], vento: [22, 32] };
+let windKt = 6;
+let gameMin = 7 * 60, wx = 'sereno', wxT = rnd(25, 40), wasClosed = false;
+let debris = [], msgT = 0, staffs = [], drops = [];
+const PATIENCE = 45;
+const GMIN = 1.5;
+
+for (let i = 0; i < 300; i++) drops.push({ x: rnd(0, WW), y: rnd(0, WH) });
+for (let i = 0; i < 6; i++) staffs.push({ x: rnd(100, 1450), y: rnd(290, 370), tx: rnd(100, 1450), ty: rnd(290, 370), wait: rnd(0, 3), c: pick(['#ff7a1a', '#ffd23f', '#d9342b', '#1f3b73']) });
+
+function say(t) { $('msg').textContent = t; $('msg').style.display = t ? '' : 'none'; }
+function dayLevel(m) {
+  if (m >= 420 && m <= 1080) return 1;
+  if (m >= 300 && m < 420) return (m - 300) / 120;
+  if (m > 1080 && m <= 1200) return 1 - (m - 1080) / 120;
+  return 0;
+}
+function periodLabel(m) {
+  if (m < 300) return '🌙 Notte';
+  if (m < 420) return '🌅 Alba';
+  if (m < 1080) return '☀️ Giorno';
+  if (m < 1200) return '🌇 Tramonto';
+  return '🌙 Notte';
+}
+function isClosed() { return gameMin >= 1380 || gameMin < 360; }
+function clockStr() {
+  return String(Math.floor(gameMin / 60)).padStart(2, '0') + ':' + String(Math.floor(gameMin % 60)).padStart(2, '0');
+}
+function fmtTime(s) { return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(Math.floor(s % 60)).padStart(2, '0'); }
+
+function loseHeart(n = 1) {
+  rep -= n;
+  if (rep <= 0) {
+    running = false;
+    $('overText').textContent = `Hai servito ${served} passeggeri e incassato €${Math.floor(totalRev)} in ${fmtTime(elapsed)}.`;
+    $('over').style.display = 'flex';
+  }
+}
+
+function earn(p) {
+  const late = Math.max(0, p.delay - PATIENCE);
+  const f = Math.max(0.4, 1 - late / 120);
+  const rev = Math.round(p.pax * TIER_MULT[p.tierKey].fare * p.al.fare * f);
+  money += rev; totalRev += rev; served += p.pax;
+  say(`${p.flight} da ${p.dest}: +€${rev}.` + (f < 1 ? ` Ritardo: ricavi ridotti del ${Math.round((1 - f) * 100)}%.` : '') + (p.al.name === 'Ryanairo' ? ' Bagagli a pagamento incassati!' : ''));
+}
+
+// ---------- Voli ----------
+function createPlane() {
+  const choices = ROUTES.filter(r => reqOK(r.req));
+  const route = pick(choices);
+  const airs = Object.values(AIRLINES).filter(a => reqOK(a.req) && a.tiers.includes(route.tier));
+  const al = pick(airs);
+  const si = AIRSLOT.findIndex(s => !s.plane);
+  if (si < 0) return;
+  const p = {
+    id: nid++, al, flight: al.code + ' ' + Math.floor(rnd(100, 999)),
+    dest: route.name, tierKey: route.tier,
+    pax: Math.round(rnd(al.pax[0], al.pax[1]) * TIER_MULT[route.tier].pax),
+    x: AIRSLOT[si].x, y: AIRSLOT[si].y, h: 0,
+    state: 'airWait', path: [], speed: 180, slot: si, hold: null, gate: null,
+    timer: 0, wait: 0, delay: 0, held: false, blocked: false, stuck: 0, removed: false
+  };
+  AIRSLOT[si].plane = p;
+  playRadio();
+  planes.push(p);
+}
+
+function step(p, dt) {
+  if (!p.path.length) return true;
+  const t = p.path[0];
+  const dx = t.x - p.x, dy = t.y - p.y;
+  const d = Math.hypot(dx, dy);
+  const mult = (wx === 'pioggia' || wx === 'vento') && p.state === 'approach' ? 0.7 : 1;
+  const sp = (p.held || p.blocked) ? 0 : p.speed * dt * mult;
+  if (d > 0.01) p.h = Math.atan2(dy, dx);
+  if (d <= sp) { p.x = t.x; p.y = t.y; p.path.shift(); }
+  else { p.x += dx / d * sp; p.y += dy / d * sp; }
+  return false;
+}
+
+function holdLeavePath(hx) {
+  return [P(hx, TAXI_Y), P(150, TAXI_Y), ...ARC_W, P(1640, RWY_Y)];
+}
+function depRoute(g) {
+  return [P(g.x, TAXI_Y), P(150, TAXI_Y), ...ARC_W, P(1640, RWY_Y)];
+}
+
+function leave(p) {
+  if (p.slot != null && AIRSLOT[p.slot]) AIRSLOT[p.slot].plane = null;
+  if (p.hold != null) { const hx = HOLD[p.hold].x; HOLD[p.hold].plane = null; p.path = holdLeavePath(hx); p.hold = null; }
+  else if (p.gate) { p.gate.plane = null; p.path = depRoute(p.gate); p.gate = null; }
+  else p.path = [P(-140, 60)];
+  if (sel === p) sel = null;
+  p.state = 'depart'; p.speed = 180;
+  loseHeart(1);
+  say(`${p.flight} se n'è andata per l'attesa troppo lunga!`);
+}
+
+function updatePlane(p, dt) {
+  switch (p.state) {
+    case 'airWait': p.delay += dt; break;
+    case 'approach':
+      if (!p.touched && p.x > 170 && Math.abs(p.y - RWY_Y) < 1) { p.touched = true; playTouchdown(); }
+      if (step(p, dt)) { p.state = 'holding'; p.wait = 0; playRadio(); }
+      break;
+    case 'holding': p.delay += dt; break;
+    case 'taxiIn': if (step(p, dt)) { p.state = 'deplane'; p.timer = 5; p.h = Math.PI / 2; earn(p); } break;
+    case 'deplane': p.timer -= dt; if (p.timer <= 0) { p.state = 'boarding'; p.timer = 6; } break;
+    case 'boarding': p.timer -= dt; if (p.timer <= 0) { p.state = 'readyDep'; p.wait = 0; playRadio(); speak(`Aircraft ${spokenFlight(p.flight)}, line up and wait runway ${spokenNum(15)}.`); say(`${p.flight} pronta al decollo: autorizza dal pannello.`); } break;
+    case 'readyDep': break;
+    case 'depart':
+      if (!p.roared && Math.abs(p.y - RWY_Y) < 1) { p.roared = true; playTakeoff(); }
+      if (step(p, dt)) p.removed = true;
+      break;
+  }
+}
+
+// Frena gli aerei che hanno un altro aereo davanti e segnala le collisioni
+function dirOf(p) {
+  if (!['approach', 'taxiIn', 'depart'].includes(p.state) || !p.path.length) return null;
+  const t = p.path[0];
+  const l = Math.hypot(t.x - p.x, t.y - p.y);
+  return l < 0.01 ? null : { x: (t.x - p.x) / l, y: (t.y - p.y) / l };
+}
+function traffic() {
+  const live = planes.filter(p => !p.removed);
+  live.forEach(p => { p.stuck = p.blocked ? (p.stuck || 0) + 1 : 0; p.blocked = false; });
+  for (const a of live) {
+    const da = dirOf(a);
+    if (!da) continue;
+    for (const b of live) {
+      if (b === a) continue;
+      const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy);
+      if (d < 26) { crash(a, b); return; }
+      if (d < 50 && dx * da.x + dy * da.y > 0 && !['readyDep', 'deplane', 'boarding'].includes(b.state)) {
+        const db = dirOf(b);
+        if ((!db || db.x * da.x + db.y * da.y > 0.5) && a.stuck < 480) a.blocked = true;
+      }
+    }
+  }
+}
+function crash(a, b) {
+  [a, b].forEach(p => {
+    p.removed = true;
+    if (p.gate) { p.gate.plane = null; p.gate = null; }
+    if (p.hold != null) { HOLD[p.hold].plane = null; p.hold = null; }
+    if (p.slot != null && AIRSLOT[p.slot]) AIRSLOT[p.slot].plane = null;
+    debris.push({ x: p.x, y: p.y, t: 0 });
+  });
+  if (sel === a || sel === b) sel = null;
+  say(`💥 Collisione tra ${a.flight} e ${b.flight}! Perdi 2 cuori.`);
+  loseHeart(2);
+}
+
+function landingBlocked() {
+  // un solo atterraggio alla volta: blocca se un altro aereo sta atterrando o decollando
+  return planes.some(p => !p.removed && (p.state === 'approach' || p.state === 'depart'));
+}
+function runwayBusy() {
+  return planes.some(p => !p.removed && (p.state === 'approach' || p.state === 'depart') &&
+    p.y > RWY_Y - 20 && p.y < RWY_Y + 20 && p.x > 60 && p.x < 1460);
+}
+
+function authorizeLanding(p) {
+  if (p.state !== 'airWait') return;
+  if (isClosed()) { say('Aeroporto chiuso: atterraggi sospesi fino alle 06:00.'); return; }
+  if (wx === 'nebbia') { say('Nebbia: atterraggi sospesi per scarsa visibilità.'); return; }
+  if (landingBlocked()) { say("Soglia occupata: attendi che il tratto d'ingresso sia libero."); return; }
+  const hi = HOLD.findIndex(h => !h.plane);
+  if (hi < 0) { say('Coda piena: massimo 2 aerei in attesa di gate.'); return; }
+  HOLD[hi].plane = p; p.hold = hi;
+  AIRSLOT[p.slot].plane = null; p.slot = null;
+  const hx = HOLD[hi].x;
+  p.state = 'approach'; p.speed = 180; p.wait = 0;
+  p.path = [P(100, RWY_Y), ...ARC_E, P(hx, TAXI_Y)];
+  say(`${p.flight} autorizzato all'atterraggio.`);
+  speak(`Aircraft ${spokenFlight(p.flight)}, from ${enCity(p.dest)}, cleared to land runway ${spokenNum(33)}.`);
+}
+
+function assignGate(p, g) {
+  if (p.state !== 'holding') return;
+  if (!gateOpen(g)) { say('Gate bloccato: sbloccalo dal pannello Potenziamenti.'); return; }
+  if (g.plane) { say('Quel gate è occupato!'); return; }
+  const hx = HOLD[p.hold].x;
+  HOLD[p.hold].plane = null; p.hold = null;
+  g.plane = p; p.gate = g;
+  p.state = 'taxiIn'; p.speed = 90;
+  p.path = [P(hx, TAXI_Y), P(g.x, TAXI_Y), P(g.x, GATE_Y)];
+  if (sel === p) sel = null;
+  say(`${p.flight} in rotta verso il Gate ${g.id}.`);
+  speak(`Aircraft ${spokenFlight(p.flight)}, proceed to stand G ${spokenNum(g.id)} via taxiway ${spokenNum(33)}.`);
+}
+
+function authorizeTakeoff(p) {
+  if (wx === 'nebbia') { say('Nebbia: decolli sospesi per scarsa visibilità.'); return; }
+  if (p.state !== 'readyDep') return;
+  if (isClosed()) { say('Aeroporto chiuso: decolli sospesi fino alle 06:00.'); return; }
+  if (runwayBusy()) { say('Pista occupata: decollo in attesa che sia libera.'); return; }
+  const g = p.gate;
+  g.plane = null; p.gate = null;
+  p.state = 'depart'; p.speed = 180;
+  p.path = depRoute(g);
+  if (sel === p) sel = null;
+  say(`${p.flight} autorizzato al decollo verso ${p.dest}.`);
+  speak(`Aircraft ${spokenFlight(p.flight)}, to ${enCity(p.dest)}. Runway ${spokenNum(15)}, cleared for takeoff.`);
+}
+
+function trySpawn(dt) {
+  spawnT -= dt;
+  if (spawnT > 0) return;
+  spawnT = rnd(9, 14);
+  const waiting = planes.filter(p => p.state === 'airWait').length;
+  const active = planes.filter(p => p.state !== 'depart').length;
+  if (waiting < 2 && active < 9 && !isClosed()) createPlane();
+}
+
+function buyUpgrade(k) {
+  const u = UPGRADES[k];
+  if (owned[k]) return;
+  if (money < u.cost) { say(`Servono €${u.cost} per "${u.name}".`); return; }
+  money -= u.cost; owned[k] = true;
+  say(`Potenziamento acquistato: ${u.name}! ${u.desc}.`);
+  upgSig = ''; panelSig = '';
+}
+
+// ---------- Tempo ----------
+let wasClosedFlag = false;
+function clockTick() {
+  const c = isClosed();
+  if (c !== wasClosed) {
+    wasClosed = c;
+    say(c ? '🌙 Aeroporto chiuso: niente decolli o atterraggi fino alle 06:00.' : '☀️ Aeroporto riaperto alle 06:00. Buon lavoro!');
+  }
+}
+function weatherTick(dt) {
+  wxT -= dt;
+  if (wxT <= 0) {
+    wx = pick(['sereno', 'sereno', 'nuvoloso', 'pioggia', 'nebbia', 'vento'].filter(w => w !== wx));
+    wxT = rnd(25, 40);
+    windKt = Math.round(WIND_RANGE[wx][0] + Math.random() * (WIND_RANGE[wx][1] - WIND_RANGE[wx][0]));
+    say(`Meteo: ${WX[wx]}.` + (wx === 'nebbia' ? ' Atterraggi e decolli sospesi per scarsa visibilità.' : ''));
+  }
+  if (wx === 'pioggia') drops.forEach(d => { d.y += dt * 900; d.x -= dt * 120; if (d.y > WH) { d.y = -20; d.x = rnd(0, WW + 200); } });
+}
+function staffTick(dt) {
+  staffs.forEach(s => {
+    if (s.wait > 0) { s.wait -= dt; return; }
+    const dx = s.tx - s.x, dy = s.ty - s.y, d = Math.hypot(dx, dy);
+    if (d < 3) { s.wait = rnd(2, 6); s.tx = rnd(100, 1450); s.ty = rnd(290, 370); return; }
+    const k = Math.min(d, 40 * dt);
+    s.x += dx / d * k; s.y += dy / d * k;
+  });
+}
+
+// ---------- Disegno ----------
+function drawPlane(p) {
+  const { x, y, h, al } = p;
+  ctx.save();
+  const ac = AIRCRAFT[al.code];
+  ctx.translate(x, y); ctx.rotate(h); ctx.scale(ac.scale, ac.scale);
+  const isRyan = al.code === 'FR';
+  ctx.fillStyle = isRyan ? '#0a5ce0' : al.wing; ctx.fillRect(-6, -32, 12, 64);
+  if (isRyan) { ctx.fillStyle = '#f5c800'; ctx.fillRect(-7, -34, 14, 5); ctx.fillRect(-7, 29, 14, 5); ctx.fillRect(-5, -22, 12, 8); ctx.fillRect(-5, 14, 12, 8); }
+  ctx.fillStyle = isRyan ? '#0a5ce0' : '#ffffff'; ctx.fillRect(-34, -6, 68, 12);
+  if (al.code === 'AP') { // Aeropenisola: fusoliera bianca, punte ali rosse, motori bianchi con anello rosso
+    ctx.fillStyle = '#c8102e'; ctx.fillRect(-7, -34, 14, 5); ctx.fillRect(-7, 29, 14, 5);
+    ctx.fillStyle = '#f2f2f2'; ctx.fillRect(-5, -22, 12, 8); ctx.fillRect(-5, 14, 12, 8);
+    ctx.fillStyle = '#c8102e'; ctx.fillRect(-5, -22, 3, 8); ctx.fillRect(-5, 14, 3, 8);
+  }
+  ctx.fillStyle = al.stripe; ctx.fillRect(-30, -2, 56, 4);
+  ctx.fillStyle = ac.nose; ctx.fillRect(28, -6, 6, 12);
+  ctx.fillStyle = al.wing; ctx.fillRect(-24, -14, 8, 28);
+  if (al.code === 'AP') { // deriva tricolore verde-bianco-rosso
+    ctx.fillStyle = '#2e8b57'; ctx.fillRect(-36, -8, 3, 16);
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(-33, -8, 3, 16);
+    ctx.fillStyle = '#c8102e'; ctx.fillRect(-30, -8, 4, 16);
+  } else { ctx.fillStyle = isRyan ? '#f5c800' : al.fin; ctx.fillRect(-36, -8, 10, 16); }
+  ctx.restore();
+  if (p === sel) { ctx.strokeStyle = '#ffe04a'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(x, y, 44, 0, 6.283); ctx.stroke(); }
+  ctx.font = 'bold 19px Arial'; ctx.textAlign = 'center';
+  ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(255,255,255,.95)'; ctx.strokeText(p.flight, x, y - 40);
+  ctx.fillStyle = '#222'; ctx.fillText(p.flight, x, y - 40);
+}
+
+function drawVehicles() {
+  GATES.forEach(g => {
+    const s = g.plane ? g.plane.state : '';
+    if (['deplane', 'boarding', 'readyDep'].includes(s)) {
+      ctx.fillStyle = '#f2a900'; ctx.fillRect(g.x + 30, 455, 22, 12);
+      ctx.fillStyle = '#333'; ctx.fillRect(g.x + 30, 467, 22, 4);
+    }
+    if (['deplane', 'boarding'].includes(s)) {
+      ctx.fillStyle = '#e6e9ee'; ctx.fillRect(g.x - 44, 440, 14, 30);
+      ctx.fillStyle = '#8a5a2a'; ctx.fillRect(g.x - 44, 470, 14, 4);
+    }
+  });
+}
+
+function draw(t) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = '#20301a'; ctx.fillRect(0, 0, cv.width, cv.height);
+  ctx.setTransform(S * DPR, 0, 0, S * DPR, OX * DPR, OY * DPR);
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(st, 0, 0, WW, WH);
+
+  // luci di pista che lampeggiano in sequenza
+  for (let x = 100; x < 1500; x += 60) {
+    const b = 0.4 + 0.6 * Math.max(0, Math.sin(t * 6 + x * 0.02));
+    ctx.fillStyle = 'rgba(255,190,60,' + b.toFixed(2) + ')';
+    ctx.beginPath(); ctx.arc(x, 84, 3.5, 0, 6.283); ctx.fill();
+    ctx.beginPath(); ctx.arc(x, 176, 3.5, 0, 6.283); ctx.fill();
+  }
+  // stalli: verde libero, rosso occupato
+  // stato dei gate: verde libero, rosso occupato, giallo lampeggiante se si libera entro 3 secondi
+  GATES.forEach(g => {
+    let c = 'rgba(46,204,113,.5)';
+    if (g.plane) {
+      c = 'rgba(231,76,60,.5)';
+      if (g.plane.state === 'boarding' && g.plane.timer <= 3) c = (Math.floor(t * 4) % 2) ? 'rgba(242,194,0,.9)' : 'rgba(242,194,0,.25)';
+    }
+    ctx.fillStyle = c; ctx.fillRect(g.x - 28, 476, 56, 46);
+    if (!gateOpen(g)) {
+      ctx.fillStyle = 'rgba(90,90,90,.6)'; ctx.fillRect(g.x - 36, 424, 72, 106);
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 14px Arial'; ctx.textAlign = 'center'; ctx.fillText('🔒', g.x, 486);
+    }
+  });
+
+  drawVehicles();
+  [...planes].filter(p => p.state !== 'airWait').sort((a, b) => a.y - b.y).forEach(drawPlane);
+
+  // personale di terra
+  staffs.forEach(s => {
+    ctx.fillStyle = s.c; ctx.fillRect(s.x - 4, s.y - 2, 8, 10);
+    ctx.fillStyle = '#e0ac69'; ctx.beginPath(); ctx.arc(s.x, s.y - 6, 3, 0, 6.283); ctx.fill();
+  });
+
+  // esplosioni
+  debris.forEach(d => {
+    d.t += 0.03;
+    ctx.globalAlpha = Math.max(0, 1 - d.t);
+    ctx.fillStyle = '#ff7a1a'; ctx.beginPath(); ctx.arc(d.x, d.y, 10 + d.t * 40, 0, 6.283); ctx.fill();
+    ctx.globalAlpha = 1;
+  });
+  debris = debris.filter(d => d.t < 1);
+
+  // luce della giornata, notte, nebbia e pioggia
+  const dl = dayLevel(gameMin);
+  ctx.fillStyle = 'rgba(8,16,44,' + ((1 - dl) * 0.55).toFixed(3) + ')';
+  ctx.fillRect(0, 0, WW, WH);
+  if (wx === 'nebbia') { ctx.fillStyle = 'rgba(200,210,220,0.45)'; ctx.fillRect(0, 0, WW, WH); }
+  if (wx === 'nuvoloso' || wx === 'pioggia') { ctx.fillStyle = 'rgba(90,100,110,0.18)'; ctx.fillRect(0, 0, WW, WH); }
+  if (wx === 'pioggia') {
+    ctx.strokeStyle = 'rgba(170,212,255,0.7)'; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    drops.forEach(d => { ctx.moveTo(d.x, d.y); ctx.lineTo(d.x - 4, d.y + 12); });
+    ctx.stroke();
+  }
+}
+
+// ---------- Pannello ----------
+const arrEl = $('arrivals'), depEl = $('departures'), gateEl = $('gates');
+let panelSig = '', upgSig = '';
+
+function rowHTML(p) {
+  const st = {
+    airWait: '⏳ Chiede atterraggio', approach: '🛬 In atterraggio', holding: '🅿️ In attesa di gate',
+    taxiIn: '🚕 Verso il gate', deplane: '🧳 Sbarco passeggeri', boarding: '🧳 Imbarco passeggeri',
+    readyDep: '✅ Pronto al decollo', depart: '🛫 In decollo'
+  }[p.state] || '';
+  let act = '';
+  if (p.state === 'airWait') act = `<button data-act="land" data-id="${p.id}">Authorize landing</button>`;
+  if (p.state === 'holding') {
+    const free = [];
+    act = free.length
+      ? `<select data-act="gate" data-id="${p.id}"><option value="">Scegli gate…</option>${free.map(g => `<option value="${g.id}">Gate ${g.id}</option>`).join('')}</select>`
+      : '<small>Clicca l\'aereo sul campo: va al gate libero</small>';
+  }
+  if (p.state === 'readyDep') act = `<button data-act="takeoff" data-id="${p.id}">Authorize take-off</button>`;
+  if (['approach', 'taxiIn', 'depart'].includes(p.state)) act += `<button data-act="hold" data-id="${p.id}">${p.held ? '▶ Resume' : '⏸ Hold'}</button>`;
+  return `<div class="fl ${p === sel ? 'sel' : ''}" data-row="${p.id}">
+    <b>${logoHTML(p.al)} ${p.flight} · ${p.al.name}</b>
+    <small>→ ${p.dest} (${TIER_LABEL[p.tierKey]}) · ${p.pax} pax</small>
+    <small>${st}${p.held ? ' · ⏸ fermo' : ''}${p.blocked ? ' · ⛔ traffico' : ''}</small>${act}</div>`;
+}
+
+function gateHTML(g) {
+  if (!g.plane) return `<div class="fl" data-gate="${g.id}"><b>Gate ${g.id}</b><small>🟢 Libero</small></div>`;
+  const p = g.plane;
+  const st = { taxiIn: '🚕 Aereo in arrivo', deplane: '🧳 Sbarco', boarding: '🧳 Imbarco', readyDep: '✅ Pronto al decollo' }[p.state] || '';
+  return `<div class="fl" data-row="${p.id}"><b>Gate ${g.id} · ${logoHTML(p.al)} ${p.flight}</b><small>${p.al.name} → ${p.dest}</small><small>🔴 Occupato · ${st}</small></div>`;
+}
+
+function renderPanel() {
+  const ARR = ['airWait', 'approach', 'holding', 'taxiIn', 'deplane'];
+  const DEP = ['boarding', 'readyDep'];
+  const arr = planes.filter(p => ARR.includes(p.state));
+  const dep = planes.filter(p => DEP.includes(p.state));
+  const sig = planes.map(p => p.id + p.state + p.held + p.blocked).join(',') + '|' + GATES.map(g => g.plane ? 1 : 0).join('') + '|' + (sel && sel.id);
+  if (sig !== panelSig) {
+    panelSig = sig;
+    arrEl.innerHTML = arr.length ? arr.map(rowHTML).join('') : '<div class="empty">No landings in progress.</div>';
+    depEl.innerHTML = dep.length ? dep.map(rowHTML).join('') : '<div class="empty">No take-offs in preparation.</div>';
+
+  }
+  const us = Math.floor(money) + ':' + Object.keys(owned).join(',') + ':' + gatesOpen;
+  if (us !== upgSig) {
+    upgSig = us;
+    $('upg').innerHTML = gateRowHTML() + Object.entries(UPGRADES).map(([k, u]) => {
+      const btn = owned[k] ? '<button disabled>✔ Acquistato</button>'
+        : `<button data-buy="${k}" ${money < u.cost ? 'disabled' : ''}>Acquista €${u.cost}</button>`;
+      return `<div class="up"><b>${u.name}</b><small>${u.desc}</small>${btn}</div>`;
+    }).join('');
+  }
+}
+
+$('panel').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-act]');
+  if (btn) {
+    const p = planes.find(x => x.id == btn.dataset.id);
+    if (!p) return;
+    if (btn.dataset.act === 'land') authorizeLanding(p);
+    if (btn.dataset.act === 'takeoff') authorizeTakeoff(p);
+    if (btn.dataset.act === 'hold') p.held = !p.held;
+    panelSig = '';
+    return;
+  }
+  if (e.target.closest('select')) return;
+  const row = e.target.closest('[data-row]');
+  if (row) {
+    const p = planes.find(x => x.id == row.dataset.row);
+    sel = (sel === p) ? null : p;
+    panelSig = '';
+  }
+});
+$('panel').addEventListener('change', e => {
+  if (!e.target.dataset || e.target.dataset.act !== 'gate') return;
+  const p = planes.find(x => x.id == e.target.dataset.id);
+  const g = GATES.find(x => x.id == e.target.value);
+  if (p && g) assignGate(p, g);
+  panelSig = '';
+});
+
+document.querySelectorAll('.tab').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.toggle('on', x === b));
+    $('arrPane').style.display = b.dataset.tab === 'arr' ? '' : 'none';
+    $('depPane').style.display = b.dataset.tab === 'dep' ? '' : 'none';
+
+  });
+});
+
+$('upgBtn').addEventListener('click', () => {
+  const up = $('upgPanel');
+  up.style.display = up.style.display === 'none' ? '' : 'none';
+  upgSig = '';
+});
+$('upgClose').addEventListener('click', () => { $('upgPanel').style.display = 'none'; });
+$('upgPanel').addEventListener('click', e => {
+  const buy = e.target.closest('[data-buy]');
+  if (buy) buyUpgrade(buy.dataset.buy);
+  if (e.target.closest('[data-gate]')) buyGate();
+});
+$('helpClose').addEventListener('click', () => { $('help').style.display = 'none'; });
+$('zIn').addEventListener('click', () => zoomAt(1.25, innerWidth / 2, innerHeight / 2));
+$('zOut').addEventListener('click', () => zoomAt(1 / 1.25, innerWidth / 2, innerHeight / 2));
+$('zReset').addEventListener('click', () => { Z = 1; PX0 = 0; PY0 = 0; fit(); });
+
+// ---------- Torre di controllo: il titolo apre/chiude il pannello ----------
+$('towerTitle').addEventListener('click', () => {
+  const b = $('towerBody');
+  const open = b.style.display === 'none';
+  b.style.display = open ? '' : 'none';
+  $('towerTitle').textContent = '🗼 TORRE DI CONTROLLO · Foggia (FOG) ' + (open ? '▾' : '▸');
+});
+
+// il pulsante della torre sta nella barra in alto, accanto ad Audio
+$('hud').appendChild($('towerBtn'));
+// ---------- Pulsante torre di controllo (in alto a destra) ----------
+$('towerBtn').addEventListener('click', () => {
+  const p = $('panel');
+  const hidden = getComputedStyle(p).display === 'none';
+  p.style.display = hidden ? 'block' : 'none';
+});
+// il pulsante lampeggia se un aereo richiede un'azione
+function updateTowerBtn() {
+  const need = planes.some(p => !p.removed && ['airWait', 'holding', 'readyDep'].includes(p.state));
+  $('towerBtn').classList.toggle('blink', need);
+}
+
+// doppio clic su un aereo: apre la scheda con le sue informazioni
+cv.addEventListener('dblclick', e => {
+  const wxp = (e.clientX - OX) / S, wyp = (e.clientY - OY) / S;
+  const plane = planes.find(p => !p.removed && p.state !== 'airWait' && Math.hypot(p.x - wxp, p.y - wyp) < 55);
+  if (plane) openCard(plane);
+});
+
+// ---------- Clic sul campo ----------
+cv.addEventListener('pointerdown', e => {
+  const wxp = (e.clientX - OX) / S, wyp = (e.clientY - OY) / S;
+  const plane = planes.find(p => !p.removed && p.state !== 'airWait' && Math.hypot(p.x - wxp, p.y - wyp) < 55);
+  if (plane) {
+    sel = plane;
+    if (plane.state === 'holding') {
+      const free = GATES.filter(g => gateOpen(g) && !g.plane).sort((a, b) => Math.abs(a.x - plane.x) - Math.abs(b.x - plane.x));
+      if (free.length) assignGate(plane, free[0]);
+      else say(`${plane.flight}: nessun gate libero, attendi.`);
+    } else {
+      say(`${plane.flight} selezionato.`);
+    }
+    panelSig = '';
+    return;
+  }
+  const gate = GATES.find(g => Math.abs(g.x - wxp) < 40 && wyp > 440 && wyp < 560);
+  if (gate) {
+    if (sel && sel.state === 'holding') assignGate(sel, gate);
+    else say('Seleziona prima un aereo in attesa di gate.');
+    panelSig = '';
+    return;
+  }
+  sel = null;
+  panelSig = '';
+});
+
+// ---------- HUD ----------
+function updateHUD() {
+  $('money').textContent = '€ ' + Math.floor(money);
+  $('rep').textContent = '♥'.repeat(Math.max(0, rep)) + '♡'.repeat(Math.max(0, 3 - rep));
+  $('served').textContent = 'Passengers: ' + served;
+  $('rev').textContent = 'Revenue: €' + Math.floor(totalRev);
+  $('time').textContent = '🕒 ' + clockStr() + ' · ' + periodLabel(gameMin) + ' · ' + WX[wx] + ' · 🌬️ ' + windKt + ' kn' + (isClosed() ? ' · 🔒 CLOSED' : '');
+}
+
+// ---------- Scheda dettagli aereo (clic sull'aereo) ----------
+let cardPlane = null, cardSig = '';
+const STATE_TXT = { airWait: 'In volo, chiede atterraggio', approach: 'In atterraggio', holding: 'In attesa di gate', taxiIn: 'In rullaggio verso il gate', deplane: 'Sbarco passeggeri', boarding: 'Imbarco passeggeri', readyDep: 'Pronto al decollo', depart: 'In decollo' };
+function openCard(p) { cardPlane = p; cardSig = ''; $('planeCard').style.display = 'block'; renderCard(); }
+function closeCard() { cardPlane = null; $('planeCard').style.display = 'none'; }
+function renderCard() {
+  const p = cardPlane;
+  if (!p || p.removed) { closeCard(); return; }
+  const card = $('planeCard');
+  const sig = p.state + p.held + p.blocked + (p.gate ? p.gate.id : '');
+  if (sig !== cardSig) {
+    cardSig = sig;
+    const ac = AIRCRAFT[p.al.code];
+    card.innerHTML = `<button id="cardClose" style="float:right;padding:0 7px;margin:0;pointer-events:auto">×</button>
+      <b>${p.flight}</b> ${logoHTML(p.al)}<br>
+      <span style="display:inline-block;width:10px;height:10px;background:${p.al.fin};border:1px solid #333"></span>
+      <span style="display:inline-block;width:10px;height:10px;background:${p.al.stripe};border:1px solid #333"></span>
+      ${p.al.name}<br>
+      <small>Modello: ${ac.model}</small><br>
+      <small>Categoria: ${ac.cls}</small><br>
+      <small>Destinazione: ${p.dest} (${TIER_LABEL[p.tierKey]})</small><br>
+      <small>Passeggeri: ${p.pax}</small><br>
+      <small>Stato: ${STATE_TXT[p.state] || ''}${p.held ? ' · fermo' : ''}${p.blocked ? ' · traffico' : ''}</small><br>
+      <small>Gate: ${p.gate ? p.gate.id : '—'}</small>`;
+  }
+  // segue l'aereo sullo schermo
+  const sx = OX + p.x * S, sy = OY + p.y * S;
+  let left = sx + 50, top = sy - 60;
+  if (left + 260 > innerWidth) left = sx - 280;
+  if (top < 10) top = 10;
+  if (top + 220 > innerHeight) top = innerHeight - 230;
+  card.style.left = left + 'px';
+  card.style.top = top + 'px';
+}
+$('planeCard').addEventListener('click', e => { if (e.target.id === 'cardClose') closeCard(); });
+
+// ---------- Audio (Web Audio, nessun file esterno) ----------
+let AC = null, master = null, engGain = null, engFilt = null, sndOn = false;
+function initAudio() {
+  if (AC) return;
+  AC = new (window.AudioContext || window.webkitAudioContext)();
+  master = AC.createGain(); master.gain.value = 0; master.connect(AC.destination);
+  // rumore dei motori: rumore bianco filtrato
+  const buf = AC.createBuffer(1, AC.sampleRate * 2, AC.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  const src = AC.createBufferSource(); src.buffer = buf; src.loop = true;
+  engFilt = AC.createBiquadFilter(); engFilt.type = 'lowpass'; engFilt.frequency.value = 200;
+  engGain = AC.createGain(); engGain.gain.value = 0;
+  src.connect(engFilt); engFilt.connect(engGain); engGain.connect(master);
+  src.start();
+}
+// tono che può scendere o salire (sirena, motore)
+function tone(f, dur, vol, type, f2) {
+  if (!AC || !sndOn) return;
+  const o = AC.createOscillator(); o.type = type;
+  const g = AC.createGain(); const t = AC.currentTime;
+  o.frequency.setValueAtTime(f, t);
+  if (f2) o.frequency.linearRampToValueAtTime(f2, t + dur);
+  g.gain.setValueAtTime(vol, t);
+  g.gain.linearRampToValueAtTime(0, t + dur);
+  o.connect(g); g.connect(master);
+  o.start(t); o.stop(t + dur + 0.05);
+}
+// raffica di rumore (stridio delle ruote, rombo dei reattori)
+function noiseBurst(dur, vol, cutoff) {
+  if (!AC || !sndOn) return;
+  const len = Math.floor(AC.sampleRate * dur);
+  const b = AC.createBuffer(1, len, AC.sampleRate);
+  const d = b.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+  const s = AC.createBufferSource(); s.buffer = b;
+  const f = AC.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = cutoff;
+  const g = AC.createGain(); g.gain.value = vol;
+  s.connect(f); f.connect(g); g.connect(master);
+  s.start();
+}
+// atterraggio: stridio delle gomme sulla pista e un botto
+function playTouchdown() {
+  noiseBurst(0.7, 0.6, 1800);
+  tone(90, 0.35, 0.5, 'sine', 50);
+}
+// decollo: rombo che cresce mentre l'aereo accelera
+function playTakeoff() {
+  noiseBurst(2.5, 0.35, 700);
+  tone(120, 2.5, 0.25, 'sawtooth', 260);
+}
+// suono di chiamata radio (walkie talkie): fruscio e bip, quando un aereo chiede attenzione
+function playRadio() {
+  if (!AC || !sndOn) return;
+  const t = AC.currentTime;
+  const len = Math.floor(AC.sampleRate * 0.25);
+  const b = AC.createBuffer(1, len, AC.sampleRate);
+  const d = b.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * 0.6;
+  const s = AC.createBufferSource(); s.buffer = b;
+  const f = AC.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1500; f.Q.value = 1.5;
+  const g = AC.createGain();
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(0.5, t + 0.02);
+  g.gain.linearRampToValueAtTime(0, t + 0.25);
+  s.connect(f); f.connect(g); g.connect(master);
+  s.start(t);
+  // bip finale
+  const o = AC.createOscillator(); o.type = 'square'; o.frequency.value = 1000;
+  const og = AC.createGain();
+  og.gain.setValueAtTime(0.08, t + 0.28);
+  og.gain.setValueAtTime(0, t + 0.4);
+  o.connect(og); og.connect(master);
+  o.start(t + 0.28); o.stop(t + 0.42);
+}
+// numeri letti in inglese: 408 diventa "four zero eight", la pista 33 diventa "three three"
+// nomi delle città letti in inglese
+const EN_CITY = { 'Milano Linate': 'Milan Linate', 'Bergamo': 'Bergamo', 'Torino': 'Turin', 'Roma FCO': 'Rome Fiumicino',
+  'Napoli': 'Naples', 'Palermo': 'Palermo', 'Catania': 'Catania', 'Parigi CDG': 'Paris Charles de Gaulle',
+  'Londra STN': 'London Stansted', 'Madrid': 'Madrid', 'Berlino BER': 'Berlin Brandenburg',
+  'New York JFK': 'New York Kennedy', 'Dubai DXB': 'Dubai', 'Tokyo HND': 'Tokyo Haneda' };
+const enCity = n => EN_CITY[n] || n;
+const DIGITS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
+function spokenFlight(f) { return f.split('').map(c => /\d/.test(c) ? DIGITS[+c] : (c === ' ' ? '' : c.toUpperCase())).join(' '); }
+function spokenNum(n) { return String(n).split('').map(c => DIGITS[+c]).join(' '); }
+// voce del controllore: dice il numero del volo quando autorizzi un atterraggio o un decollo
+// sceglie la voce inglese più naturale installata sul dispositivo
+const VOICE_PREF = ['Google UK English Male', 'Daniel', 'Microsoft David', 'Microsoft Mark', 'Alex', 'Google US English', 'Samantha', 'Microsoft Zira'];
+function pickVoice() {
+  const vs = speechSynthesis.getVoices().filter(v => v.lang.startsWith('en'));
+  for (const name of VOICE_PREF) { const v = vs.find(x => x.name.includes(name)); if (v) return v; }
+  return vs[0] || null;
+}
+function speak(text) {
+  if (!sndOn || !('speechSynthesis' in window)) return;
+  const u = new SpeechSynthesisUtterance(text);
+  u.voice = pickVoice(); u.lang = 'en-US'; u.rate = 0.95; u.pitch = 0.9;
+  speechSynthesis.cancel();
+  speechSynthesis.speak(u);
+}
+function updateAudio() {
+  if (!AC) return;
+  const mv = planes.filter(p => ['approach', 'taxiIn', 'depart'].includes(p.state)).length;
+  engGain.gain.setTargetAtTime(sndOn ? Math.min(0.10, mv * 0.035) : 0, AC.currentTime, 0.3);
+  engFilt.frequency.setTargetAtTime(180 + mv * 90, AC.currentTime, 0.3);
+}
+$('sndBtn').addEventListener('click', () => {
+  initAudio();
+  sndOn = !sndOn;
+  if (AC.state === 'suspended') AC.resume();
+  master.gain.setTargetAtTime(sndOn ? 0.7 : 0, AC.currentTime, 0.1);
+  $('sndBtn').textContent = sndOn ? '🔊 Audio on' : '🔇 Audio off';
+});
+
+// ---------- Movimento mappa con WASD / frecce ----------
+const keys = {};
+addEventListener('keydown', e => { if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return; keys[e.code] = true; });
+addEventListener('keyup', e => { keys[e.code] = false; });
+function clampPan() {
+  const limX = Math.max(0, (WW * S - innerWidth) / 2 + innerWidth * 0.3);
+  const limY = Math.max(0, (WH * S - innerHeight) / 2 + innerHeight * 0.3);
+  PX0 = Math.min(limX, Math.max(-limX, PX0));
+  PY0 = Math.min(limY, Math.max(-limY, PY0));
+}
+function panMap(dt) {
+  const sp = 420 * dt;
+  let dx = 0, dy = 0;
+  if (keys.KeyA || keys.ArrowLeft) dx += sp;
+  if (keys.KeyD || keys.ArrowRight) dx -= sp;
+  if (keys.KeyW || keys.ArrowUp) dy += sp;
+  if (keys.KeyS || keys.ArrowDown) dy -= sp;
+  if (!dx && !dy) return;
+  PX0 += dx; PY0 += dy;
+  clampPan();
+  OX = (innerWidth - WW * S) / 2 + PX0;
+  OY = (innerHeight - WH * S) / 2 + PY0;
+}
+
+// l'audio parte acceso: il browser fa partire il suono al primo clic o tasto sulla pagina
+sndOn = true;
+$('sndBtn').textContent = '🔊 Audio on';
+const unlockAudio = () => {
+  initAudio();
+  if (AC.state === 'suspended') AC.resume();
+  master.gain.setTargetAtTime(0.7, AC.currentTime, 0.1);
+  removeEventListener('pointerdown', unlockAudio);
+  removeEventListener('keydown', unlockAudio);
+};
+addEventListener('pointerdown', unlockAudio);
+addEventListener('keydown', unlockAudio);
+
+
+// ---------- Effetto pixel retrò ----------
+const pixCv = document.createElement('canvas');
+const pixCtx = pixCv.getContext('2d');
+function pixelate() {
+  const f = 3;
+  const w = Math.max(1, Math.floor(cv.width / f)), h = Math.max(1, Math.floor(cv.height / f));
+  pixCv.width = w; pixCv.height = h;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  pixCtx.imageSmoothingEnabled = false;
+  pixCtx.drawImage(cv, 0, 0, w, h);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(pixCv, 0, 0, cv.width, cv.height);
+}
+
+// ---------- Salvataggio automatico (soldi, gate, upgrade, orologio) ----------
+const SAVE_KEY = 'aeroporto-foggia-save';
+function saveGame() {
+  try {
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ money, rep, served, totalRev, gatesOpen, owned, gameMin, elapsed, wx }));
+  } catch (e) {}
+}
+function loadGame() {
+  try {
+    const d = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
+    if (!d) return;
+    money = d.money; rep = d.rep; served = d.served; totalRev = d.totalRev;
+    gatesOpen = d.gatesOpen || 1; gameMin = d.gameMin; elapsed = d.elapsed || 0; wx = d.wx || 'sereno';
+    Object.keys(owned).forEach(k => delete owned[k]);
+    Object.assign(owned, d.owned || {});
+    say('Salvataggio caricato: ' + clockStr() + ', €' + Math.floor(money) + '.');
+    setTimeout(() => { if ($('msg').textContent.startsWith('Salvataggio')) say(''); }, 4000);
+  } catch (e) {}
+}
+loadGame();
+setInterval(saveGame, 3000);
+addEventListener('beforeunload', saveGame);
+
+// ---------- Ciclo ----------
+let last = performance.now();
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  const t = now / 1000;
+
+  if (running) { gameMin += dt * GMIN; if (gameMin >= 1440) gameMin -= 1440; }
+  clockTick();
+  weatherTick(dt);
+  staffTick(dt);
+  if (isClosed()) planes.forEach(p => { if (p.state === 'airWait' || p.state === 'holding' || p.state === 'readyDep') p.wait = 0; });
+  if (running) {
+    elapsed += dt;
+    trySpawn(dt);
+    traffic();
+    planes.forEach(p => updatePlane(p, dt));
+    planes = planes.filter(p => !p.removed);
+  }
+  panMap(dt);
+  draw(t);
+  pixelate();
+  if (cardPlane) renderCard();
+  updateAudio();
+  updateTowerBtn();
+  renderPanel();
+  updateHUD();
+  if (msgT > 0) msgT -= dt;
+}
+requestAnimationFrame(frame);
+
+// ---------- Ricomincia ----------
+$('restart').addEventListener('click', () => {
+  planes = []; sel = null; debris = [];
+  AIRSLOT.forEach(s => s.plane = null);
+  HOLD.forEach(h => h.plane = null);
+  GATES.forEach(g => g.plane = null);
+  money = 500; rep = 3; served = 0; totalRev = 0; elapsed = 0; spawnT = 3; gatesOpen = 1;
+  gameMin = 7 * 60; wx = 'sereno'; wxT = rnd(25, 40); wasClosed = false;
+  for (const k of Object.keys(owned)) delete owned[k];
+  running = true;
+  panelSig = ''; upgSig = '';
+  $('over').style.display = 'none';
+  say('Nuovo turno a Foggia! Buon lavoro.');
+});
+</script>
+</body>
+</html>
