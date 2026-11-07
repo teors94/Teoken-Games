@@ -1,0 +1,838 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Le disavventure di Leo</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:system-ui,sans-serif;color:#fff}
+canvas{display:block}
+#hud{position:fixed;top:10px;left:10px;background:rgba(0,0,0,.6);padding:10px 14px;border-radius:8px;font-size:15px;line-height:1.6;pointer-events:none}
+#prompt{position:fixed;bottom:150px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.7);padding:6px 14px;border-radius:6px;display:none;pointer-events:none;font-size:15px;white-space:nowrap}
+#log{position:fixed;bottom:14px;left:14px;width:min(560px,90vw);font-size:15px;pointer-events:none}
+.msg{background:rgba(0,0,0,.65);padding:6px 10px;border-radius:6px;margin-top:4px;transition:opacity .8s}
+#start{position:fixed;inset:0;background:rgba(15,15,35,.94);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;cursor:pointer;z-index:5}
+#start h1{color:#ffd166;margin:0 0 12px;font-size:32px}
+#start p{max-width:560px;line-height:1.6;margin:6px 0}
+#start .btn{margin-top:18px;background:#ffd166;color:#222;padding:12px 26px;border-radius:8px;font-weight:bold;font-size:18px}
+#touch{position:fixed;inset:0;pointer-events:none;z-index:4;display:none}
+@media (pointer:coarse){ #touch{display:block} #log{bottom:210px} #prompt{bottom:230px} #hud{font-size:13px} }
+html,body{touch-action:none;-webkit-user-select:none;user-select:none}
+#joy{position:fixed;left:18px;bottom:18px;width:130px;height:130px;border-radius:50%;background:rgba(255,255,255,.18);border:2px solid rgba(255,255,255,.4);pointer-events:auto;touch-action:none}
+#knob{position:absolute;left:50%;top:50%;width:54px;height:54px;margin:-27px 0 0 -27px;border-radius:50%;background:rgba(255,255,255,.5);pointer-events:none}
+.tbtn{position:fixed;width:64px;height:64px;border-radius:50%;background:rgba(0,0,0,.45);border:2px solid rgba(255,255,255,.5);color:#fff;font:bold 14px system-ui;display:flex;align-items:center;justify-content:center;pointer-events:auto;touch-action:none}
+.tbtn.on{background:rgba(255,209,102,.8);color:#222}
+</style>
+</head>
+<body>
+<div id="hud"></div>
+<div id="prompt"></div>
+<div id="log"></div>
+<div id="start">
+  <h1>Le disavventure di Leo</h1>
+  <p>Leo abita al <b>terzo piano</b>. È sbadato e ovunque vada combina disastri.</p>
+  <p>W A S D o frecce: muoversi (Q/E ruota la visuale) · F: interagire · SHIFT: correre · SPAZIO: saltare · C: accovacciarsi · Z/X o rotella: zoom · M: audio on/off</p>
+  <div class="btn">Clicca per iniziare</div>
+</div>
+<div id="touch">
+  <div id="joy"><div id="knob"></div></div>
+  <div class="tbtn" data-key="ShiftLeft" style="right:118px;bottom:40px">CORRI</div>
+  <div class="tbtn" data-act="jump" style="right:118px;bottom:118px">SALTA</div>
+  <div class="tbtn" data-key="KeyC" style="right:22px;bottom:118px">ACC</div>
+  <div class="tbtn" data-act="interact" style="right:22px;bottom:22px;width:84px;height:84px;font-size:22px">F</div>
+  <div class="tbtn" data-key="KeyQ" style="right:96px;top:90px">Q</div>
+  <div class="tbtn" data-key="KeyE" style="right:22px;top:90px">E</div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const keys = {};
+const held = (...c) => c.some(k => keys[k]);
+const rnd = (a, b) => a + Math.random() * (b - a);
+
+/* ================= AUDIO ================= */
+let ac = null, master = null, noiseBuf = null, muted = false, started = false;
+let musicStep = 0, nextNote = 0;
+const MEL = [659.25,0,783.99,659.25,587.33,0,523.25,587.33,659.25,0,783.99,880,783.99,0,659.25,0];
+const BASS = [130.81,0,130.81,0,174.61,0,174.61,0,196,0,196,0,130.81,0,98,0];
+function initAudio(){
+  ac = new (window.AudioContext || window.webkitAudioContext)();
+  master = ac.createGain(); master.gain.value = muted ? 0 : .7; master.connect(ac.destination);
+  noiseBuf = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+  const d = noiseBuf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  nextNote = ac.currentTime + .1;
+  setInterval(scheduleMusic, 25);
+}
+function tone(type, f, dur, vol, when = 0, f2 = f){
+  if (!ac) return;
+  const t = ac.currentTime + when;
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = type; o.frequency.setValueAtTime(f, t);
+  if (f2 !== f) o.frequency.exponentialRampToValueAtTime(f2, t + dur);
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.001, t + dur);
+  o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + .05);
+}
+function noise(dur, freq, vol, type = 'bandpass', when = 0){
+  if (!ac) return;
+  const t = ac.currentTime + when;
+  const s = ac.createBufferSource(); s.buffer = noiseBuf;
+  const f = ac.createBiquadFilter(); f.type = type; f.frequency.value = freq;
+  const g = ac.createGain(); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.001, t + dur);
+  s.connect(f); f.connect(g); g.connect(master);
+  s.start(t, Math.random() * .5); s.stop(t + dur + .05);
+}
+const SFX = {
+  creak(){
+    if (!ac) return;
+    const t = ac.currentTime, o = ac.createOscillator(), g = ac.createGain();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(150, t); o.frequency.linearRampToValueAtTime(340, t + .5); o.frequency.linearRampToValueAtTime(190, t + .95);
+    g.gain.setValueAtTime(.0001, t); g.gain.linearRampToValueAtTime(.09, t + .1); g.gain.linearRampToValueAtTime(.0001, t + 1);
+    o.connect(g); g.connect(master); o.start(t); o.stop(t + 1.05);
+    noise(.6, 1800, .12, 'bandpass', .15);
+  },
+  crash(){ noise(.7, 900, .7, 'lowpass'); noise(.15, 3500, .4, 'highpass', .03); tone('square', 420, .35, .18, 0, 90); },
+  click(){ tone('square', 1200, .05, .15, 0, 300); },
+  bonk(){ tone('sine', 170, .2, .5, 0, 55); },
+  boing(){ tone('triangle', 520, .6, .35, 0, 140); },
+  ding(){ tone('sine', 1320, .7, .25); tone('sine', 1760, .9, .15, .06); },
+  squeak(){ tone('sawtooth', 900, .25, .1, 0, 480); tone('sawtooth', 700, .25, .1, .28, 1100); },
+  bzzt(){ noise(.4, 4000, .15, 'highpass'); tone('square', 90, .3, .08); },
+  rumble(){ noise(1.5, 150, .35, 'lowpass'); tone('sawtooth', 60, 1.5, .08); },
+  water(){ noise(1.2, 2500, .18, 'highpass'); },
+  step(){ noise(.05, 600, .05, 'lowpass'); }
+};
+function scheduleMusic(){
+  if (!ac) return;
+  while (nextNote < ac.currentTime + .2){
+    const i = musicStep % 16, w = nextNote - ac.currentTime;
+    if (MEL[i]) tone('square', MEL[i], .16, .035, w);
+    if (BASS[i]) tone('triangle', BASS[i], .2, .09, w);
+    if (i % 2 === 0) noise(.03, 7000, .03, 'highpass', w);
+    musicStep++; nextNote += .16;
+  }
+}
+function toggleMute(){ muted = !muted; if (master) master.gain.value = muted ? 0 : .7; say(muted ? 'Audio spento.' : 'Audio acceso.'); }
+
+/* ================= SCENA ================= */
+const SKY = 0x5a8f35, DAY = 0x8fd06b, WALL = 0xc9a06a, H = 2.8, K = .55;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(SKY);
+scene.fog = new THREE.Fog(SKY, 30, 70);
+const VIEW = 11;
+const cam = new THREE.OrthographicCamera(-VIEW * innerWidth / innerHeight / 2, VIEW * innerWidth / innerHeight / 2, VIEW / 2, -VIEW / 2, .1, 200);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+const PIX = 3;
+renderer.setPixelRatio(1);
+renderer.setSize(Math.ceil(innerWidth / PIX), Math.ceil(innerHeight / PIX), false);
+renderer.domElement.style.width = '100vw'; renderer.domElement.style.height = '100vh'; renderer.domElement.style.imageRendering = 'pixelated';
+document.body.appendChild(renderer.domElement);
+addEventListener('resize', () => { const a = innerWidth / innerHeight; cam.left = -VIEW * a / 2; cam.right = VIEW * a / 2; cam.top = VIEW / 2; cam.bottom = -VIEW / 2; cam.updateProjectionMatrix(); renderer.setSize(Math.ceil(innerWidth / PIX), Math.ceil(innerHeight / PIX), false); });
+scene.add(new THREE.HemisphereLight(0xfff1dd, 0x403020, .9));
+const sun = new THREE.DirectionalLight(0xffffff, .5); sun.position.set(8, 20, 6); scene.add(sun);
+
+const M = c => new THREE.MeshLambertMaterial({ color: c });
+function part(w, h, d, c, x, y, z, parent = scene){
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), M(c));
+  m.position.set(x, y, z); parent.add(m); return m;
+}
+function bx(w, h, d, c, x, y, z){ return part(w, h, d, c, x, y + h / 2, z); }
+const colliders = [];
+/* mobile con collisione: x1..x2, z1..z2, altezza h */
+function fx(x1, x2, z1, z2, h, c){
+  const m = bx(x2 - x1, h, z2 - z1, c, (x1 + x2) / 2, 0, (z1 + z2) / 2);
+  colliders.push({ x1, x2, z1, z2, on: true }); return m;
+}
+/* muro tra due punti, con collisione */
+function wall(x1, z1, x2, z2, h = H, c = WALL){
+  const a = Math.min(x1, x2) - .06, b = Math.max(x1, x2) + .06, p = Math.min(z1, z2) - .06, q = Math.max(z1, z2) + .06;
+  bx(b - a, h, q - p, c, (a + b) / 2, 0, (p + q) / 2);
+  colliders.push({ x1: a, x2: b, z1: p, z2: q, on: true });
+}
+function floor(x1, x2, z1, z2, y, c){ bx(x2 - x1, .1, z2 - z1, c, (x1 + x2) / 2, y - .1, (z1 + z2) / 2); }
+
+/* Zone calpestabili */
+const RECTS_APT = [[0,0,1.5,3.4],[1.5,0,8.5,3.8],[1.5,3.8,3.5,6.9],[3.5,3.8,8.5,5.6],[3.5,5.7,8.5,6.9],
+                   [1.2,6.9,4.0,8.15],[-1.55,7.1,1.25,11.2],[1.35,8.15,3.9,11.2],[4.0,7.1,8.5,11.2]];
+const RECTS_LAND = [[-7,5,1.5,6.9],[-7,6.9,1.2,7.0],[0,-0.8,8.5,0],[-1.55,11.2,8.5,12.1]];
+function inR(rs, x, z){ return rs.some(([a, b, c, d]) => x > a && x < c && z > b && z < d); }
+function zoneAt(x, z){
+  if (inR(RECTS_APT, x, z) || inR(RECTS_LAND, x, z)) return { y: 0 };
+  if (x > -4 && x < -2 && z >= 7 && z < 10.5){ const i = Math.floor((z - 7) / .4375); return { y: (i + 1) * .1875 }; }
+  if (x > -7 && x < -5 && z >= 7 && z < 10.5){ const i = Math.floor((z - 7) / .4375); return { y: -(i + 1) * 1.125 }; }
+  if (x > -4.5 && x < -1.7 && z >= 10.5 && z < 16.5) return { y: 1.5, ceil: 3.4 - .4 * (z - 10.5) };
+  if (x > -12 && x < -4.5 && z >= 10.5 && z < 22) return { y: -9 };
+  return null;
+}
+
+/* ---- Pavimenti ---- */
+floor(0, 1.5, 0, 3.4, 0, 0xd9d2c3);       // cucina
+floor(1.5, 8.5, 0, 3.8, 0, 0x9b6a3e);     // soggiorno
+floor(1.5, 3.5, 3.8, 6.9, 0, 0xb88a5a);   // corridoio
+floor(3.5, 8.5, 3.8, 5.6, 0, 0x8c6a4a);   // studio
+floor(3.5, 8.5, 5.7, 6.9, 0, 0x9a8060);   // ripostiglio
+floor(1.2, 4.0, 6.9, 8.15, 0, 0xb88a5a);  // disimpegno
+floor(-1.55, 1.25, 7.1, 11.2, 0, 0xa8784a); // camera piccola
+floor(1.35, 3.9, 8.15, 11.2, 0, 0x9cc8dc); // bagno
+floor(4.0, 8.5, 7.1, 11.2, 0, 0xa8784a);   // camera grande
+floor(-7, 1.5, 5, 7, 0, 0x7a7a80);        // pianerottolo
+floor(-4.5, -1.7, 10.5, 16.5, 1.5, 0x8b6a4a); // mansarda
+floor(-12, -4.5, 10.5, 22, -9, 0x3a3d44);     // strada
+
+/* ---- Muri esterni ---- */
+wall(0, 0, 4.0, 0);
+wall(5.7, 0, 8.5, 0);
+wall(0, 0, 0, 3.4);
+wall(0, 3.4, 1.5, 3.4);
+wall(8.5, 0, 8.5, 11.2);
+wall(-1.55, 11.2, -0.4, 11.2);
+wall(0.6, 11.2, 5.6, 11.2);
+wall(6.7, 11.2, 8.5, 11.2);
+wall(-1.55, 7.1, -1.55, 11.2);
+wall(-1.55, 7.1, 1.25, 7.1);
+wall(1.2, 6.9, 1.5, 6.9);
+wall(1.2, 6.9, 1.2, 7.25);
+wall(1.5, 3.8, 1.5, 5.6);
+wall(1.5, 6.8, 1.5, 6.9);
+/* ---- Muri interni ---- */
+wall(1.5, 0, 1.5, 1.0);
+wall(1.5, 1.9, 1.5, 3.8);
+wall(3.5, 3.8, 8.5, 3.8);
+wall(3.5, 3.8, 3.5, 4.85);
+wall(3.5, 5.5, 3.5, 6.0);
+wall(3.5, 6.7, 3.5, 6.9);
+wall(3.5, 5.65, 8.5, 5.65);
+wall(3.5, 6.9, 4.0, 6.9);
+wall(4.0, 7.0, 8.5, 7.0);
+wall(1.25, 7.1, 1.25, 7.25);
+wall(1.25, 7.8, 1.25, 11.2);
+wall(4.0, 7.1, 4.0, 7.25);
+wall(4.0, 7.8, 4.0, 11.2);
+wall(1.35, 8.15, 2.3, 8.15);
+wall(2.9, 8.15, 3.9, 8.15);
+wall(1.3, 8.15, 1.3, 11.2);
+function wallB(x1, z1, x2, z2, yb, yt, c = WALL){ const a = Math.min(x1, x2) - .06, b = Math.max(x1, x2) + .06, p = Math.min(z1, z2) - .06, q = Math.max(z1, z2) + .06; part(b - a, yt - yb, q - p, c, (a + b) / 2, (yb + yt) / 2, (p + q) / 2); colliders.push({ x1: a, x2: b, z1: p, z2: q, on: true }); }
+/* ---- Pareti lungo le scale ---- */
+wallB(-4.1, 7, -4.1, 10.5, -1, H); wallB(-1.9, 7, -1.9, 10.5, -1, H);
+wallB(-7.1, 7, -7.1, 10.5, -10, H); wallB(-4.9, 7, -4.9, 10.5, -10, H);
+/* ---- Mansarda ---- */
+wall(-4.5, 10.5, -4.5, 16.5, 3);
+wall(-1.7, 10.5, -1.7, 16.5, 3);
+wall(-4.5, 16.5, -1.7, 16.5, 3);
+const cg = new THREE.BufferGeometry();
+cg.setAttribute('position', new THREE.Float32BufferAttribute([-4.5,3.4,10.5, -1.7,3.4,10.5, -1.7,1.0,16.5, -4.5,1.0,16.5], 3));
+cg.setIndex([0,2,1, 0,3,2]); cg.computeVertexNormals();
+const ceilMesh = new THREE.Mesh(cg, new THREE.MeshLambertMaterial({ color: 0x6b4a2a, side: THREE.DoubleSide }));
+ceilMesh.visible = false; scene.add(ceilMesh);
+
+/* ---- Scale salita (sopra) e discesa (strada) ---- */
+for (let i = 0; i < 8; i++){
+  const top = (i + 1) * .1875, zc = 7 + .4375 * (i + .5);
+  bx(2, top + 1, .4375, 0x8a8a90, -3, -1, zc);
+  const top2 = -(i + 1) * 1.125;
+  bx(2, top2 + 10, .4375, 0x9a8a7a, -6, -10, zc);
+}
+
+/* ---- Balconi decorativi (rossi, con luci) ---- */
+bx(8.5, .1, .7, 0xb5443f, 4.25, 0, -.45);
+bx(10.05, .1, .8, 0xb5443f, 3.5, 0, 11.6);
+const LC = [0xff5555, 0xffdd55, 0x55ffaa];
+for (let i = 0; i < 24; i++){
+  const s = new THREE.Mesh(new THREE.SphereGeometry(.05, 6, 6), new THREE.MeshBasicMaterial({ color: LC[i % 3] }));
+  s.position.set(-1.4 + i * .42, .15, i % 2 ? -.15 : 11.9); scene.add(s);
+}
+for (const [x, z] of [[.3,-.45],[7.9,-.45],[-1.2,11.6],[7.9,11.6]]){
+  bx(.4, .3, .4, 0x3f8f4f, x, .1, z);
+}
+
+/* ================= PORTE ================= */
+const doors = [], inter = [];
+function addI(x, z, label, fn, valid = () => true){ inter.push({ x, z, label, fn, valid, r: 1.5 }); }
+function door(hx, hz, along, len, ang, rect, label){
+  const pv = new THREE.Group(); pv.position.set(hx, 0, hz); scene.add(pv);
+  if (along === 'z') part(.1, 2.4, len, 0x7b4b26, 0, 1.2, len / 2, pv);
+  else part(len, 2.4, .1, 0x7b4b26, len / 2, 1.2, 0, pv);
+  const c = { ...rect, on: true }; colliders.push(c);
+  const d = { pv, ang, open: false, c };
+  doors.push(d);
+  addI(along === 'z' ? hx : hx + len / 2, along === 'z' ? hz + len / 2 : hz, label, () => toggleDoor(d));
+}
+function toggleDoor(d){
+  if (d.open){
+    const r = d.c;
+    if (player.x > r.x1 - .5 && player.x < r.x2 + .5 && player.z > r.z1 - .6 && player.z < r.z2 + .6){
+      SFX.bonk(); say('Leo non può chiudere la porta: è ancora lì in mezzo!'); return;
+    }
+  }
+  d.open = !d.open; d.c.on = !d.open; SFX.creak();
+  say(d.open ? 'La porta cigola come in un film horror.' : 'Porta chiusa, sbattuta un po’.');
+}
+door(1.5, 5.6, 'z', 1.2, -1.5, { x1: 1.42, x2: 1.58, z1: 5.6, z2: 6.8 }, 'la porta d’ingresso');
+door(1.5, 1.0, 'z', .9, 1.5, { x1: 1.42, x2: 1.58, z1: 1.0, z2: 1.9 }, 'la porta della cucina');
+door(3.5, 4.85, 'z', .65, -1.5, { x1: 3.42, x2: 3.58, z1: 4.85, z2: 5.5 }, 'la porta dello studio');
+door(3.5, 6.0, 'z', .7, -1.5, { x1: 3.42, x2: 3.58, z1: 6.0, z2: 6.7 }, 'la porta del ripostiglio');
+door(1.25, 7.25, 'z', .55, 1.5, { x1: 1.17, x2: 1.33, z1: 7.25, z2: 7.8 }, 'la porta della camera piccola');
+door(4.0, 7.25, 'z', .55, -1.5, { x1: 3.92, x2: 4.08, z1: 7.25, z2: 7.8 }, 'la porta della camera grande');
+door(2.3, 8.15, 'x', .6, 1.5, { x1: 2.3, x2: 2.9, z1: 8.07, z2: 8.23 }, 'la porta del bagno');
+door(4.0, 0, 'x', 1.7, -1.5, { x1: 4.0, x2: 5.7, z1: -.06, z2: .06 }, 'la porta del balcone nord');
+door(-0.4, 11.2, 'x', 1.0, 1.5, { x1: -0.4, x2: 0.6, z1: 11.14, z2: 11.26 }, 'la porta del balcone sud');
+door(5.6, 11.2, 'x', 1.1, 1.5, { x1: 5.6, x2: 6.7, z1: 11.14, z2: 11.26 }, 'la porta del balcone sud-est');
+
+/* ================= OGGETTI DI SCENA ================= */
+const breakables = [];
+function brk(name, mesh, x, y, z, min, max, color, col){
+  const o = { name, mesh, x, y, z, min, max, color, col, broken: false };
+  breakables.push(o);
+  addI(x, z, 'provare a prendere ' + name, () => breakObj(o), () => !o.broken);
+  addI(x, z, 'provare ad aggiustare ' + name, () => repairObj(o), () => o.broken && !o.destroyed);
+}
+function lampToggle(light, label, px, pz){
+  let on = true; const i0 = light.intensity;
+  addI(px, pz, label, () => {
+    on = !on; light.intensity = on ? i0 : 0; SFX.click();
+    say(on ? 'Click! Luce accesa.' : 'Click! Luce spenta. Leo ha spento anche la presa della lavatrice.');
+  });
+}
+function house(x, z){
+  const g = new THREE.Group(); g.position.set(x, 0, z); scene.add(g);
+  part(.4, .35, .4, 0xd9a066, 0, .175, 0, g);
+  const r = new THREE.Mesh(new THREE.ConeGeometry(.3, .3, 4), M(0xb5443f));
+  r.position.set(0, .5, 0); r.rotation.y = Math.PI / 4; g.add(r);
+  return g;
+}
+function tree(x, z){
+  const g = new THREE.Group(); g.position.set(x, 0, z); scene.add(g);
+  part(.2, .5, .2, 0x6b4423, 0, .25, 0, g);
+  const c = new THREE.Mesh(new THREE.ConeGeometry(.6, 1.6, 10), M(0x2e7d46));
+  c.position.set(0, 1.3, 0); g.add(c);
+  for (let i = 0; i < 12; i++){
+    const s = new THREE.Mesh(new THREE.SphereGeometry(.05, 6, 6), new THREE.MeshBasicMaterial({ color: LC[i % 3] }));
+    s.position.set(Math.cos(i * 2.4) * (.25 + (i % 3) * .1), .6 + (i % 4) * .2, Math.sin(i * 2.4) * (.25 + (i % 3) * .1));
+    g.add(s);
+  }
+  return g;
+}
+
+/* CUCINA */
+fx(.1, .8, .2, 1.0, 2, 0xe9eef2);                        // frigo
+addI(.45, .6, 'il frigo', () => { SFX.creak(); setTimeout(() => SFX.ding(), 600); if (!hasKeys){ hasKeys = true; say('Nel frigo, tra lo yogurt e il latte, Leo trova le chiavi della Hyundai Kona!'); } else say('Leo cerca ancora, ma nel frigo ora c’è solo yogurt.'); });
+fx(.1, .6, 1.1, 3.2, .9, 0x9aa0a6);                      // piano cottura e bancone
+bx(.45, .02, .45, 0x222222, .35, .9, 1.5);               // fornelli
+bx(.3, .05, .3, 0xcfd8dc, .35, .9, 2.4);                 // lavello
+const plates = bx(.5, .05, .5, 0xffffff, .35, .92, 2.8);
+brk('i piatti buoni', plates, .35, .95, 2.8, 20, 90, 0xffffff, null);
+bx(.35, .01, 1.4, 0x7fae7f, 1.0, 0, 2.1);                // tappeto verde
+fx(.9, 1.3, .3, 1.1, .8, 0x8a5a33);                       // tavolino con pianta
+bx(.3, .3, .3, 0x3f8f4f, 1.1, .8, .7);
+
+/* SOGGIORNO */
+const stove = fx(2.7, 3.4, .05, .6, 1.0, 0x3a3a3a);
+addI(3.05, 1.0, 'la stufa a pellet', repairStove);
+function repairStove(){
+  if (!stoveBroken){ SFX.click(); say('La stufa funziona. Leo la apre per controllare e la richiude storta.'); return; }
+  repairStep++; SFX.click();
+  if (repairStep === 1) say('Stufa rotta: Leo svita il pannello frontale (1/3).');
+  else if (repairStep === 2) say('Leo estrae il bruciatore, pieno di pellet (2/3).');
+  else { SFX.ding(); repairStep = 0; stoveBroken = false; stove.material.color.setHex(0x3a3a3a); stoveTimer = rnd(60, 100); say('Leo rimonta la stufa con un pezzo in più. Sembra funzionare!'); }
+}                       // camino
+bx(.3, .3, .05, 0xff7a18, 3.05, .45, .62);                   // fuoco
+const fire = new THREE.PointLight(0xff8030, .7, 3); fire.position.set(3.05, .6, 1.0); scene.add(fire);
+bx(.12, 2.8, .12, 0x555555, 3.05, 1.0, .25);
+fx(4.9, 5.8, .5, 1.9, .8, 0xf2f2f2);                    // tavolo da pranzo
+bx(.2, .25, .2, 0x3f8f4f, 5.35, .8, 1.2);                 // centrotavola
+for (const z of [.7, 1.2, 1.7]){
+  bx(.3, .5, .3, 0x2f7a4a, 4.55, 0, z);
+  bx(.3, .5, .3, 0x2f7a4a, 6.15, 0, z);
+}
+const vase = new THREE.Mesh(new THREE.CylinderGeometry(.12, .2, .5, 12), M(0x2f6fb0));
+vase.position.set(5.2, 1.05, 1.2); scene.add(vase);
+brk('il vaso della nonna', vase, 5.2, 1.05, 1.2, 80, 400, 0x2f6fb0, null);
+fx(3.2, 7.5, 3.0, 3.7, .55, 0x2b4a86);
+addI(5.35, 3.35, 'il divano', toggleSit);                   // divano blu
+bx(4.3, .4, .15, 0x2b4a86, 5.35, .55, 3.0);              // schienale
+bx(.25, .12, .25, 0xffb347, 3.5, .55, 3.3); bx(.25, .12, .25, 0xffb347, 7.0, .55, 3.3);
+fx(7.9, 8.4, 1.2, 2.6, .6, 0x6b4423);                    // mobile TV
+const screen = bx(.08, .8, 1.2, 0x0a0a0a, 8.15, .6, 1.9);
+let tvOn = false;
+addI(8.0, 1.9, 'la TV', () => {
+  if (tvDead){ SFX.bonk(); say('La TV è morta. Leo la fissa con odio.'); return; }
+  if (tvBroken){ repairTV(); return; }
+  tvOn = !tvOn; setTV(tvOn); SFX.bzzt();
+  say(tvOn ? 'La TV si accende con un fruscio.' : 'La TV si spegne. Leo la spegne col telecomando... sul gatto.');
+});
+bx(.06, 1.6, .06, 0x333333, 7.7, 0, 3.4);                // lampada da terra
+const lampSofa = new THREE.PointLight(0xffc070, .8, 4); lampSofa.position.set(7.7, 1.7, 3.4); scene.add(lampSofa);
+lampToggle(lampSofa, 'la lampada da terra', 7.7, 3.4);
+const treeLiv = tree(3.9, .7);
+const treeCol = { x1: 3.6, x2: 4.2, z1: .4, z2: 1.0, on: true }; colliders.push(treeCol);
+brk("l'albero di Natale", treeLiv, 3.9, .9, .7, 100, 300, 0x2e7d46, treeCol);
+bx(.4, .5, .4, 0x3f8f4f, 8.1, 0, .4);                    // pianta angolo
+
+/* CORRIDOIO */
+bx(.4, .01, 3.0, 0x8b2a2a, 2.95, 0, 5.3);               // passatoia rossa
+const hse = house(2.1, 4.95);
+const hseCol = { x1: 1.9, x2: 2.3, z1: 4.75, z2: 5.15, on: true }; colliders.push(hseCol);
+brk('una casetta di pan di zenzero', hse, 2.1, .4, 4.95, 30, 120, 0xd9a066, hseCol);
+house(2.1, 3.6); house(2.3, 6.5);                        // villaggio decorativo
+
+/* STUDIO */
+fx(4.6, 6.1, 4.1, 4.5, .8, 0x8b5a2b);                    // scrivania
+const monitor = bx(.6, .4, .05, 0x1a1a1a, 5.3, .8, 4.12);
+brk('il monitor del computer', monitor, 5.3, 1.0, 4.12, 200, 600, 0x1a1a1a, null);
+bx(.4, .5, .4, 0x333333, 5.3, 0, 4.8);                    // sedia
+fx(4.7, 5.8, 3.85, 4.05, 1.6, 0x5a3a1f);                 // libreria
+fx(7.4, 8.3, 3.85, 4.05, 1.6, 0x5a3a1f);                 // libreria 2
+const globe = new THREE.Mesh(new THREE.SphereGeometry(.15, 8, 6), M(0x3a7bd5));
+globe.position.set(7.8, 1.3, 4.5); scene.add(globe);
+const deskLamp = new THREE.PointLight(0xffe0a0, .5, 3); deskLamp.position.set(6.0, 1.2, 4.3); scene.add(deskLamp);
+lampToggle(deskLamp, 'la lampada della scrivania', 6.0, 4.3);
+
+/* RIPOSTIGLIO */
+fx(4.2, 7.8, 5.75, 6.0, 1.6, 0x8b6a4a);                  // scaffali
+const boxes = bx(.8, .5, .5, 0xc0874a, 5.0, 1.6, 5.9);
+brk('le scatole di Natale del ripostiglio', boxes, 5.0, 2.0, 5.9, 60, 200, 0xc0874a, null);
+bx(.6, .5, .4, 0x3a7bd5, 6.4, 1.6, 5.9);
+bx(.35, .6, .35, 0xc62828, 7.6, 0, 6.5);                 // aspirapolvere
+bx(.2, 2.0, .5, 0xb07a3a, 8.25, 0, 6.2);                 // scala a pioli
+
+/* CAMERA GRANDE */
+bx(2, .6, .4, 0x9a7a5a, 5.6, 0, 7.5);                    // mobile TV
+bx(1.4, .7, .08, 0x111111, 6.2, .6, 7.45);             // TV
+fx(4.15, 4.9, 7.7, 11.0, 2.2, 0xd8c7a0);                 // armadio
+fx(5.6, 7.6, 8.4, 10.4, .5, 0x1f3a7a);                   // letto con piumone blu
+bx(.7, .15, .4, 0xffffff, 6.0, .5, 8.6); bx(.7, .15, .4, 0xffffff, 6.0, .5, 9.0);
+fx(7.7, 8.3, 9.9, 10.5, .6, 0x8b6a4a);                   // comodino
+const lampBed = new THREE.PointLight(0xffd080, .6, 3); lampBed.position.set(8.0, 1.2, 10.2); scene.add(lampBed);
+lampToggle(lampBed, 'la lampada del comodino', 8.0, 10.2);
+addI(6.6, 9.5, 'il letto', () => { SFX.squeak(); say('Leo si butta sul letto. Il letto protesta.'); });
+
+/* BAGNO */
+fx(1.4, 2.15, 8.3, 9.2, 2.1, 0xbfe3f2);                  // doccia
+addI(1.8, 8.75, 'la doccia', () => { SFX.water(); say('Leo apre la doccia e si ritrova bagnato... con i vestiti.'); });
+fx(1.45, 1.95, 9.3, 10.3, .9, 0xf0f0f0);                 // lavatrice e asciugatrice
+addI(1.7, 9.8, 'la lavatrice', () => { SFX.rumble(); say('La lavatrice va in centrifuga. Leo ci si appoggia sopra.'); });
+fx(1.5, 1.9, 10.5, 10.9, .45, 0xffffff);                 // WC
+fx(1.5, 1.9, 10.95, 11.1, .4, 0xffffff);                 // bidet
+fx(3.35, 3.85, 8.7, 9.6, .9, 0xf5f5f5);                  // lavabo
+bx(.3, .4, .3, 0x3f8f4f, 3.6, .9, 8.4);                  // pianta
+const towel = bx(.15, .2, .6, 0xffffff, 3.7, .9, 9.8);
+
+/* CAMERA PICCOLA */
+fx(-1.4, -.4, 9.0, 11.0, .5, 0x2a5ea8);                  // letto a quadri
+bx(.9, .05, 1.2, 0x4a7ac8, -.9, .5, 10.0);
+fx(-1.5, -1.05, 7.3, 11.0, 2.2, 0xf5e6c8);               // cabine armadio
+addI(-.9, 8.0, 'il letto a quadri', () => { SFX.squeak(); say('Il letto a quadri cigola. Leo ci dorme dentro... per dieci secondi.'); });
+
+/* MANSARDA */
+const crate1 = bx(1, 1, 1, 0xc0874a, -3.9, 1.5, 13.5);
+const col1 = { x1: -4.4, x2: -3.4, z1: 13, z2: 14, on: true }; colliders.push(col1);
+brk('una scatola di Natale', crate1, -3.9, 2.0, 13.5, 60, 200, 0xc0874a, col1);
+const crate2 = bx(1, 1, 1, 0xa87038, -2.3, 1.5, 15.2);
+const col2 = { x1: -2.8, x2: -1.8, z1: 14.7, z2: 15.7, on: true }; colliders.push(col2);
+brk('un vecchio baule', crate2, -2.3, 2.0, 15.2, 40, 150, 0xa87038, col2);
+
+/* STRADA */
+function outTree(x, z){
+  colliders.push({ x1: x - .3, x2: x + .3, z1: z - .3, z2: z + .3, on: true });
+  bx(.3, 1.5, .3, 0x6b4423, x, -9, z);
+  const s = new THREE.Mesh(new THREE.SphereGeometry(1.1, 10, 8), M(0x3f8f4f));
+  s.position.set(x, -7.3, z); scene.add(s);
+}
+outTree(-10, 13); outTree(-6, 19); outTree(-11, 20);
+
+/* Lampada dell'ingresso */
+const entryLight = new THREE.PointLight(0xffc070, .5, 3); entryLight.position.set(.5, 2, 6.2); scene.add(entryLight);
+
+/* ================= DEBRIS ================= */
+const debris = [];
+function spawnDebris(x, y, z, color){
+  for (let i = 0; i < 8; i++){
+    const m = new THREE.Mesh(new THREE.BoxGeometry(.08, .08, .08), M(color));
+    m.position.set(x + rnd(-.2, .2), y + rnd(0, .3), z + rnd(-.2, .2));
+    scene.add(m);
+    debris.push({ m, v: new THREE.Vector3(rnd(-2, 2), rnd(1, 4), rnd(-2, 2)), t: 1.5 });
+  }
+}
+function updateDebris(dt){
+  for (let i = debris.length - 1; i >= 0; i--){
+    const d = debris[i];
+    d.t -= dt; d.v.y -= 9 * dt; d.m.position.addScaledVector(d.v, dt);
+    if (d.t <= 0 || d.m.position.y < -12){ scene.remove(d.m); debris.splice(i, 1); }
+  }
+}
+
+/* ================= LEO ================= */
+const leo = new THREE.Group(); scene.add(leo); leo.scale.setScalar(K);
+const body = new THREE.Group(); leo.add(body);
+const legL = new THREE.Group(), legR = new THREE.Group();
+legL.position.set(-.14, .8, 0); legR.position.set(.14, .8, 0); body.add(legL, legR);
+part(.22, .8, .24, 0x1f2f57, 0, -.4, 0, legL); part(.22, .8, .24, 0x1f2f57, 0, -.4, 0, legR);
+part(.5, .7, .3, 0x3b6fb6, 0, 1.15, 0, body);
+const armL = new THREE.Group(), armR = new THREE.Group();
+armL.position.set(-.34, 1.45, 0); armR.position.set(.34, 1.45, 0); body.add(armL, armR);
+part(.16, .6, .16, 0x3b6fb6, 0, -.3, 0, armL); part(.16, .6, .16, 0x3b6fb6, 0, -.3, 0, armR);
+part(.36, .4, .36, 0xe0b08a, 0, 1.66, 0, body);
+part(.38, .1, .38, 0x2a2a2a, 0, 1.9, -.02, body);
+part(.3, .12, .1, 0x2a2a2a, 0, 1.5, .19, body);
+part(.06, .05, .02, 0x111111, -.08, 1.7, .19, body); part(.06, .05, .02, 0x111111, .08, 1.7, .19, body);
+part(.2, .18, .12, 0x6b4423, .2, .9, .2, body);
+
+const player = { x: 3.0, z: 2.0, y: 0, yaw: Math.PI, kneel: 0 };
+const H_STAND = 1.95 * K, R = .18, MIN_CLEAR = 1.0 * K;
+const stats = { cost: 0, broken: 0, bumps: 0, heads: 0 };
+let bumpCd = 0, stepT = 0, walkT = 0, hudLast = '';
+let firstPerson = false;
+let camYaw = 0;
+let camZoom = 1;
+let jumpH = 0, jumpV = 0;
+let hasKeys = false, inCar = false;
+const car = { x: -9, z: 16, h: 0, v: 0 };
+const carG = new THREE.Group(); scene.add(carG);
+(function buildCar(){
+  part(1.0, .45, 2.4, 0xd9552b, 0, .425, 0, carG);
+  part(.9, .4, 1.2, 0x9fb8c8, 0, .8, -.1, carG);
+  for (const [wx, wz] of [[-.5, .8], [.5, .8], [-.5, -.8], [.5, -.8]]){
+    const w = new THREE.Mesh(new THREE.CylinderGeometry(.18, .18, .14, 10), M(0x222222));
+    w.rotation.z = Math.PI / 2; w.position.set(wx, .18, wz); carG.add(w);
+  }
+  part(.2, .1, .05, 0xffee88, -.35, .45, 1.22, carG); part(.2, .1, .05, 0xffee88, .35, .45, 1.22, carG);
+  carG.position.set(car.x, -9, car.z);
+})();
+function carOK(x, z){
+  const zi = zoneAt(x, z);
+  if (!zi || zi.y !== -9) return false;
+  for (const c of colliders){
+    if (!c.on) continue;
+    const cx = Math.max(c.x1, Math.min(x, c.x2)), cz = Math.max(c.z1, Math.min(z, c.z2));
+    if ((x - cx) ** 2 + (z - cz) ** 2 < .81) return false;
+  }
+  return true;
+}
+function carToggle(){
+  if (!inCar){
+    if (!hasKeys){ SFX.bonk(); say('La Kona è chiusa. Leo tasta tutte le tasche... sono vuote.'); return; }
+    inCar = true; car.v = 0; SFX.ding(); say('Leo sale sulla Kona. Vroom!');
+  } else {
+    if (Math.abs(car.v) > .5){ say('Ferma la Kona prima di scendere!'); return; }
+    inCar = false; player.x = car.x + Math.cos(car.h) * 1.5; player.z = car.z - Math.sin(car.h) * 1.5;
+    SFX.creak(); say('Leo scende dalla Kona e dimentica di spegnerla.');
+  }
+}
+const carI = { x: car.x, z: car.z, label: 'la Hyundai Kona', fn: carToggle, valid: () => true, r: 2.2 };
+inter.push(carI);
+function jump(){
+  if (seated || inCar || jumpH > 0 || player.kneel > .5) return;
+  const zj = zoneAt(player.x, player.z);
+  if (zj && zj.ceil !== undefined) return;
+  jumpV = 4.2; SFX.boing();
+}
+let stoveBroken = false, stoveTimer = 70, repairStep = 0;
+let seated = false;
+let tvBroken = false, tvDead = false, tvStaticT = 0;
+const staticTex = staticTexMake();
+const tvTex = textTex('SEGNALE ASSENTE', '#1a3a8a', '#ffffff');
+const stoveBang = bangSprite(3.05, 1.5, .3);
+const tvBang = bangSprite(8.15, 1.6, 1.9);
+function setTV(on){ tvOn = on; if (on && !tvDead && !tvBroken && Math.random() < .35){ tvBroken = true; SFX.crash(); } refreshTV(); }
+function refreshTV(){ const tex = tvDead ? null : tvBroken ? staticTex : (tvOn ? tvTex : null); screen.material.map = tex; screen.material.color.setHex(tvOn && !tvDead ? 0xffffff : 0x0a0a0a); screen.material.needsUpdate = true; }
+function staticTexMake(){ const c = document.createElement('canvas'); c.width = 128; c.height = 80; const g = c.getContext('2d'); const im = g.createImageData(128, 80); for (let i = 0; i < im.data.length; i += 4){ const v = Math.random() * 255; im.data[i] = v; im.data[i + 1] = v; im.data[i + 2] = v; im.data[i + 3] = 255; } g.putImageData(im, 0, 0); return new THREE.CanvasTexture(c); }
+function textTex(text, bg, fg){ const c = document.createElement('canvas'); c.width = 256; c.height = 160; const g = c.getContext('2d'); g.fillStyle = bg; g.fillRect(0, 0, 256, 160); g.fillStyle = fg; g.font = 'bold 22px monospace'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, 128, 80); return new THREE.CanvasTexture(c); }
+function bangSprite(x, y, z){ const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d'); g.fillStyle = '#ff8c1a'; g.beginPath(); g.arc(32, 32, 28, 0, Math.PI * 2); g.fill(); g.fillStyle = '#fff'; g.font = 'bold 40px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('!', 32, 34); const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false })); s.scale.set(.5, .5, .5); s.position.set(x, y, z); s.visible = false; scene.add(s); return s; }
+const SEAT = { x: 5.35, z: 3.35 };
+function toggleSit(){ if (seated){ seated = false; player.x = 5.35; player.z = 2.6; say('Leo si alza dal divano.'); } else { seated = true; player.x = SEAT.x; player.z = SEAT.z; SFX.creak(); say('Leo si siede sul divano. Morbido!'); } }
+
+function canStand(x, z){
+  const zi = zoneAt(x, z);
+  if (!zi) return 'void';
+  for (const c of colliders){
+    if (!c.on) continue;
+    const cx = Math.max(c.x1, Math.min(x, c.x2)), cz = Math.max(c.z1, Math.min(z, c.z2));
+    if ((x - cx) ** 2 + (z - cz) ** 2 < R * R) return 'wall';
+  }
+  if (zi.ceil !== undefined && zi.ceil - zi.y < MIN_CLEAR) return 'ceil';
+  return 'ok';
+}
+function moveXZ(dx, dz){
+  const full = canStand(player.x + dx, player.z + dz);
+  if (full === 'ok'){ player.x += dx; player.z += dz; return 'ok'; }
+  if (canStand(player.x + dx, player.z) === 'ok') player.x += dx;
+  else if (canStand(player.x, player.z + dz) === 'ok') player.z += dz;
+  return full;
+}
+function bump(r){
+  if (bumpCd > 0) return;
+  bumpCd = .5; SFX.bonk();
+  if (r === 'ceil'){ stats.heads++; say('BONK! Nemmeno inginocchiato ci passa: la mansarda è troppo bassa!'); }
+  else if (r === 'void'){ say('Leo quasi cade giù per le scale!'); }
+  else { stats.bumps++; say('Leo sbatte contro il muro. Ahia!'); }
+}
+function breakObj(o){
+  if (o.broken) return;
+  o.broken = true; o.mesh.rotation.z = Math.PI / 2; if (o.col) o.col.on = false;
+  if (!o.bang) o.bang = bangSprite(o.x, o.y + .9, o.z); o.bang.visible = true;
+  spawnDebris(o.x, o.y, o.z, o.color);
+  SFX.crash();
+  const cost = Math.round(rnd(o.min, o.max));
+  stats.cost += cost; stats.broken++;
+  say('💥 Leo ha distrutto ' + o.name + '! -€' + cost + '. Premi F per provare ad aggiustarlo.');
+}
+const ANGRY = [
+  "Sono sfortunato da bambino", "Sta il diavolo dietro la porta", "Qualcuno mi ha sentenziato", "Tutte a me capitano",
+  "Vabbè quando lo butto pendutto", "Ma chi l’ha progettata sta roba?!", "Non è colpa mia, è il pavimento che si è spostato",
+  "Questa casa ce l’ha con me", "Ecco, ci mancava solo questa", "Mi state prendendo in giro?", "Ok, respiro. Respiro. Non esplodo.",
+  "Il karma mi odia, lo sento", "Chi ha messo questo qui in mezzo?", "Ma perché proprio a me?!", "Giuro che la prossima volta compro la plastica",
+  "Questo oggetto mi ha guardato storto", "Mia nonna diceva: stai attento. Non l’ho ascoltata", "Ho le mani di burro, lo sanno tutti",
+  "Ma è possibile essere così sfortunati?", "La colla? Dov’è la colla?!", "Ci rinuncio. Ci rinuncio davvero",
+  "Adesso mi siedo un attimo e piango", "Tanto il prossimo lo rompo lo stesso", "Ok, ho capito. Il mondo mi odia",
+  "Non ho fatto niente, è stato il gatto", "Mi sa che è meglio comprarne uno nuovo", "Questa non è una casa, è una trappola",
+  "Ma quanto costa una cassetta degli attrezzi?", "Maledetto mercoledì!"
+];
+function repairObj(o){
+  if (!o.broken || o.destroyed) return;
+  SFX.click();
+  if (Math.random() < .6){
+    o.destroyed = true; o.mesh.visible = false; if (o.bang) o.bang.visible = false; spawnDebris(o.x, o.y, o.z, o.color); SFX.crash();
+    const cost = Math.round(rnd(o.min / 2, o.max / 2));
+    stats.cost += cost;
+    const frase = ANGRY[Math.floor(Math.random() * ANGRY.length)];
+    say('💥 Leo ha sfasciato ' + o.name + ' del tutto! -€' + cost + ' — Leo: “' + frase + '”');
+  } else {
+    o.broken = false; o.mesh.rotation.z = 0; if (o.col) o.col.on = true; if (o.bang) o.bang.visible = false; SFX.ding();
+    say('Leo ha riattaccato ' + o.name + '. Sembra reggere... per ora.');
+  }
+}
+function repairTV(){
+  if (!tvBroken || tvDead) return;
+  SFX.click();
+  if (Math.random() < .6){
+    tvDead = true; tvBroken = false; tvOn = false; stats.cost += 150; SFX.crash(); refreshTV();
+    const frase = ANGRY[Math.floor(Math.random() * ANGRY.length)];
+    say('💥 Leo ha sfasciato la TV del tutto! -€150 — Leo: “' + frase + '”');
+  } else {
+    tvBroken = false; SFX.ding(); refreshTV();
+    say('Leo ha riattaccato il cavo della TV. Ora funziona... forse.');
+  }
+}
+function checkClumsy(){
+  for (const o of breakables){
+    if (o.broken) continue;
+    if (Math.hypot(o.x - player.x, o.z - player.z) < 1.1 && Math.random() < .12){
+      SFX.boing(); say('Leo inciampa nei propri piedi e trascina giù ' + o.name + '!');
+      breakObj(o); return;
+    }
+  }
+}
+function nearest(){
+  let best = null, bd = 1e9;
+  for (const it of inter){
+    if (!it.valid()) continue;
+    const d = Math.hypot(player.x - it.x, player.z - it.z);
+    if (d < it.r && d < bd){ bd = d; best = it; }
+  }
+  return best;
+}
+function interact(){
+  if (!started) return;
+  const it = nearest();
+  if (it) it.fn();
+  else { SFX.click(); say('Leo agita le braccia verso il nulla. Nessuno lo ha visto.'); }
+}
+
+/* ================= MESSAGGI E HUD ================= */
+function say(t){
+  const L = $('log');
+  const d = document.createElement('div'); d.className = 'msg'; d.textContent = t;
+  L.appendChild(d);
+  while (L.children.length > 1) L.firstChild.remove();
+  setTimeout(() => { d.style.opacity = 0; setTimeout(() => d.remove(), 800); }, 4000);
+}
+const START_MONEY = 10000;
+let lastCost = 0;
+function lossFlash(n){
+  const d = document.createElement('div');
+  d.textContent = '-€' + n;
+  d.style.cssText = 'position:fixed;top:70px;left:50%;transform:translateX(-50%);color:#ff3b3b;font:bold 26px system-ui;text-shadow:0 0 6px #000;pointer-events:none;transition:opacity 1.2s,top 1.2s;z-index:3';
+  document.body.appendChild(d);
+  requestAnimationFrame(() => { d.style.opacity = 0; d.style.top = '40px'; });
+  setTimeout(() => d.remove(), 1400);
+}
+function updateHUD(){
+  if (stats.cost > lastCost){ lossFlash(stats.cost - lastCost); lastCost = stats.cost; }
+  const zi = zoneAt(player.x, player.z);
+  const where = !zi ? '' : player.y < -4 ? 'Strada' : player.y > 1 ? 'Mansarda' : player.y < -.5 ? 'Scale' : 'Casa di Leo';
+  const txt = `<b>Terzo piano · ${where}</b><br>💰 Denaro: €${START_MONEY - stats.cost} · <span style="color:#ff5555">💥 Persi: €${stats.cost}</span><br>💥 Oggetti rotti: ${stats.broken}<br>🧱 Muri colpiti: ${stats.bumps} · 🤕 Testate: ${stats.heads}`;
+  if (txt !== hudLast){ $('hud').innerHTML = txt; hudLast = txt; }
+  const it = nearest(), p = $('prompt');
+  if (it){ p.style.display = 'block'; p.textContent = 'F: ' + it.label; }
+  else p.style.display = 'none';
+}
+
+/* ================= CAMERA ================= */
+const camPos = new THREE.Vector3(), tgt = new THREE.Vector3();
+function updateCamera(dt){
+  /* vista fissa dall'alto in stile Stardew Valley: la telecamera segue Leo senza ruotare */
+  tgt.set(player.x, player.y + .3, player.z);
+  if (cam.zoom !== camZoom){ cam.zoom = camZoom; cam.updateProjectionMatrix(); }
+  camPos.set(player.x + Math.sin(camYaw) * 7, player.y + 11, player.z + Math.cos(camYaw) * 7);
+  cam.position.lerp(camPos, 1 - Math.pow(.0005, dt));
+  cam.lookAt(tgt);
+}
+
+/* ================= UPDATE ================= */
+function update(dt){
+  const ix = (held('KeyD', 'ArrowRight') ? 1 : 0) - (held('KeyA', 'ArrowLeft') ? 1 : 0);
+  const iz = (held('KeyW', 'ArrowUp') ? 1 : 0) - (held('KeyS', 'ArrowDown') ? 1 : 0);
+  camYaw += ((held('KeyE') ? 1 : 0) - (held('KeyQ') ? 1 : 0)) * 1.8 * dt;
+  const fwdX = -Math.sin(camYaw), fwdZ = -Math.cos(camYaw), rgtX = Math.cos(camYaw), rgtZ = -Math.sin(camYaw);
+  const crouch = held('KeyC');
+  let moving = false;
+  if ((ix || iz) && !seated && !inCar){
+    const n = Math.hypot(ix, iz);
+    const sp = (player.kneel > .5 ? 1.3 : (held('ShiftLeft', 'ShiftRight') ? 4.4 : 2.6)) * dt / n;
+    const mx = ix * rgtX + iz * fwdX, mz = ix * rgtZ + iz * fwdZ;
+    const dx = mx * sp, dz = mz * sp;
+    player.yaw = Math.atan2(dx, dz);
+    const r = moveXZ(dx, dz);
+    if (r !== 'ok') bump(r); else moving = true;
+  }
+  bumpCd -= dt;
+  const zi = zoneAt(player.x, player.z) || { y: 0 };
+  player.y = zi.y;
+  const lowCeil = zi.ceil !== undefined && zi.ceil - zi.y < H_STAND;
+  player.kneel += ((crouch || lowCeil ? 1 : 0) - player.kneel) * Math.min(1, dt * 10);
+
+  if (moving){
+    walkT += dt * (player.kneel > .5 ? 6 : 9);
+    stepT -= dt;
+    if (stepT <= 0){ stepT = .42; SFX.step(); checkClumsy(); }
+  }
+  const sw = Math.sin(walkT) * .7 * (moving ? 1 : 0);
+  legL.rotation.x = sw; legR.rotation.x = -sw;
+  armL.rotation.x = -sw * .6; armR.rotation.x = sw * .6;
+  body.scale.y = seated ? .6 : 1 - .45 * player.kneel;
+  if (jumpH > 0 || jumpV !== 0){
+    jumpV -= 13 * dt;
+    jumpH = Math.max(0, jumpH + jumpV * dt);
+    if (jumpH === 0) jumpV = 0;
+  }
+  leo.position.set(player.x, player.y + jumpH, player.z);
+  leo.rotation.y = player.yaw;
+  leo.visible = !inCar;
+
+  for (const d of doors) d.pv.rotation.y += ((d.open ? d.ang : 0) - d.pv.rotation.y) * Math.min(1, dt * 6);
+
+  if (!stoveBroken){
+    stoveTimer -= dt;
+    if (stoveTimer <= 0){ stoveBroken = true; repairStep = 0; stove.material.color.setHex(0x8a3a1a); SFX.crash(); say('La stufa a pellet si rompe e sbuffa fumo nero! Premi E davanti alla stufa per smontarla e ripararla.'); }
+  }
+  if (inCar){
+    const thr = (held('KeyW', 'ArrowUp') ? 1 : 0) - (held('KeyS', 'ArrowDown') ? 1 : 0);
+    const str = (held('KeyD', 'ArrowRight') ? 1 : 0) - (held('KeyA', 'ArrowLeft') ? 1 : 0);
+    car.v += thr * 4 * dt; car.v *= (1 - .8 * dt); car.v = Math.max(-2.5, Math.min(6, car.v));
+    if (Math.abs(car.v) > .05) car.h += str * (car.v / 3) * 1.6 * dt;
+    const nx = car.x + Math.sin(car.h) * car.v * dt, nz = car.z + Math.cos(car.h) * car.v * dt;
+    if (carOK(nx, nz)){ car.x = nx; car.z = nz; } else { if (Math.abs(car.v) > .5) SFX.bonk(); car.v *= -.3; }
+    player.x = car.x; player.z = car.z; player.yaw = car.h;
+    carG.position.set(car.x, -9, car.z); carG.rotation.y = car.h;
+  }
+  carI.x = car.x; carI.z = car.z;
+  stoveBang.visible = stoveBroken;
+  tvBang.visible = tvBroken && !tvDead;
+  if (tvOn && tvBroken && !tvDead){ tvStaticT -= dt; if (tvStaticT <= 0){ tvStaticT = .4; SFX.bzzt(); } }
+  const out = player.y < -4;
+  scene.background.setHex(out ? DAY : SKY);
+  scene.fog.color.setHex(out ? DAY : SKY);
+
+  updateDebris(dt);
+  updateCamera(dt);
+  updateHUD();
+}
+
+/* ================= INPUT E AVVIO ================= */
+function start(){
+  if (started) return;
+  initAudio(); started = true;
+  $('start').style.display = 'none';
+  say('Leo è tornato a casa. Tutto sotto controllo... per ora.');
+}
+$('start').addEventListener('click', start);
+addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
+  if (!started){ start(); return; }
+  if (e.code === 'KeyF' && !e.repeat) interact();
+  if (e.code === 'KeyM') toggleMute();
+  if (e.code === 'Space' && !e.repeat) jump();
+  if (e.code === 'KeyZ') camZoom = Math.min(2.6, camZoom * 1.15);
+  if (e.code === 'KeyX') camZoom = Math.max(.6, camZoom / 1.15);
+
+});
+addEventListener('keyup', e => { keys[e.code] = false; });
+
+/* ===== Controlli touch (mobile) ===== */
+function setKey(c, on){ keys[c] = on; }
+const joy = $('joy'), knob = $('knob');
+let joyId = null;
+function joyMove(t){
+  const r = joy.getBoundingClientRect();
+  const dx = t.clientX - (r.left + r.width / 2), dy = t.clientY - (r.top + r.height / 2);
+  const m = Math.min(Math.hypot(dx, dy), 50), a = Math.atan2(dy, dx);
+  const kx = Math.cos(a) * m, ky = Math.sin(a) * m;
+  knob.style.transform = `translate(${kx}px, ${ky}px)`;
+  setKey('KeyD', kx > 14); setKey('KeyA', kx < -14);
+  setKey('KeyS', ky > 14); setKey('KeyW', ky < -14);
+}
+function joyEnd(e){
+  for (const t of e.changedTouches) if (t.identifier === joyId){
+    joyId = null; knob.style.transform = '';
+    setKey('KeyD', false); setKey('KeyA', false); setKey('KeyS', false); setKey('KeyW', false);
+  }
+}
+joy.addEventListener('touchstart', e => {
+  e.preventDefault(); if (!started) start();
+  const t = e.changedTouches[0]; joyId = t.identifier; joyMove(t);
+}, { passive: false });
+joy.addEventListener('touchmove', e => {
+  e.preventDefault();
+  for (const t of e.changedTouches) if (t.identifier === joyId) joyMove(t);
+}, { passive: false });
+joy.addEventListener('touchend', joyEnd);
+joy.addEventListener('touchcancel', joyEnd);
+document.querySelectorAll('.tbtn').forEach(b => {
+  const k = b.dataset.key, act = b.dataset.act;
+  b.addEventListener('touchstart', e => {
+    e.preventDefault(); if (!started) start();
+    b.classList.add('on'); if (k) setKey(k, true);
+    if (act === 'interact') interact();
+    if (act === 'jump') jump();
+  }, { passive: false });
+  const up = e => { e.preventDefault(); b.classList.remove('on'); if (k) setKey(k, false); };
+  b.addEventListener('touchend', up, { passive: false });
+  b.addEventListener('touchcancel', up, { passive: false });
+});
+
+addEventListener('wheel', e => { e.preventDefault(); camZoom = Math.min(2.6, Math.max(.6, camZoom * Math.exp(-e.deltaY * .0015))); }, { passive: false });
+let pinchD = 0;
+renderer.domElement.addEventListener('touchmove', e => {
+  if (e.touches.length === 2){
+    const [a, b] = e.touches;
+    const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    if (pinchD) camZoom = Math.min(2.6, Math.max(.6, camZoom * d / pinchD));
+    pinchD = d;
+  }
+}, { passive: true });
+renderer.domElement.addEventListener('touchend', () => { pinchD = 0; });
+
+updateCamera(1);
+let last = performance.now();
+function frame(now){
+  const dt = Math.min(.05, (now - last) / 1000); last = now;
+  if (started) update(dt);
+  renderer.render(scene, cam);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
